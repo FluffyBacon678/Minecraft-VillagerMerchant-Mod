@@ -1,10 +1,16 @@
 {
   "schemaVersion": 1,
-  "id": "merchant_villager_client_test",
+  "id": "merchant_villager_test",
   "version": "1.0.0",
-  "name": "Merchant Villager Client Tests",
-  "environment": "client",
+  "name": "Merchant Villager Tests",
+  "environment": "*",
   "entrypoints": {
+    "fabric-gametest": [
+      "com.fluffybacon.merchantvillager.gametest.MerchantPostGameTests",
+      "com.fluffybacon.merchantvillager.gametest.MerchantProfessionGameTest",
+      "com.fluffybacon.merchantvillager.gametest.MerchantTradingGameTest",
+      "com.fluffybacon.merchantvillager.gametest.MerchantRecoveryGameTest"
+    ],
     "fabric-client-gametest": [
       "com.fluffybacon.merchantvillager.clienttest.MerchantPostClientGameTest"
     ]
@@ -14,6 +20,6 @@
   ],
   "depends": {
     "merchant_villager": "*",
-    "fabric-client-gametest-api-v1": "*"
+    "fabric-api": "*"
   }
 }

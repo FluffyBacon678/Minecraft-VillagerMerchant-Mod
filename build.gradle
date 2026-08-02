@@ -25,12 +25,6 @@ loom {
     }
 
     runs {
-        gametest {
-            inherit server
-            name "Fabric GameTest"
-            vmArg "-Dfabric-api.gametest"
-            runDir "build/gametest"
-        }
         datagen {
             inherit client
             name "Fabric Data Generation"
@@ -45,8 +39,8 @@ loom {
 fabricApi {
     configureTests {
         createSourceSet = true
-        modId = "merchant_villager_client_test"
-        enableGameTests = false
+        modId = "merchant_villager_test"
+        enableGameTests = true
         enableClientGameTests = true
         eula = true
     }
@@ -77,6 +71,58 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
+}
+
+tasks.register("verifyReleaseJar") {
+    group = "verification"
+    description = "Checks that the distributable JAR contains production code and assets only."
+    dependsOn tasks.named("remapJar")
+
+    def releaseJar = tasks.named("remapJar").flatMap { it.archiveFile }
+    inputs.file(releaseJar)
+
+    doLast {
+        def requiredEntries = [
+            "assets/merchant_villager/icon.png",
+            "assets/merchant_villager/textures/entity/villager/profession/merchant.png",
+            "assets/merchant_villager/textures/entity/zombie_villager/profession/merchant.png"
+        ]
+        def forbiddenPatterns = [
+            ~/(^|\/)(gametest|clienttest)(\/|$)/,
+            ~/merchant_villager_test/
+        ]
+
+        def zip = new java.util.zip.ZipFile(releaseJar.get().asFile)
+        try {
+            def entries = java.util.Collections.list(zip.entries())*.name
+            def forbiddenEntries = entries.findAll { entry ->
+                forbiddenPatterns.any { pattern -> entry =~ pattern }
+            }
+            if (!forbiddenEntries.isEmpty()) {
+                throw new GradleException("Release JAR contains test harness entries: ${forbiddenEntries}")
+            }
+
+            def missingEntries = requiredEntries.findAll { entry -> !entries.contains(entry) }
+            if (!missingEntries.isEmpty()) {
+                throw new GradleException("Release JAR is missing required assets: ${missingEntries}")
+            }
+
+            def metadataEntry = zip.getEntry("fabric.mod.json")
+            if (metadataEntry == null) {
+                throw new GradleException("Release JAR is missing fabric.mod.json")
+            }
+            def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(metadataEntry))
+            if (metadata.entrypoints?."fabric-gametest" || metadata.entrypoints?."fabric-client-gametest") {
+                throw new GradleException("Release fabric.mod.json contains GameTest entrypoints")
+            }
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn tasks.named("verifyReleaseJar")
 }
 
 java {

@@ -99,7 +99,7 @@ Use Java 21:
 ```text
 gradlew build
 gradlew test
-gradlew runGametest
+gradlew runGameTest
 gradlew runClientGameTest
 gradlew runDatagen
 gradlew runServer

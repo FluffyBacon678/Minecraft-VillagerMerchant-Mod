@@ -20,12 +20,6 @@
     "client": [
       "com.fluffybacon.merchantvillager.client.MerchantVillagerClient"
     ],
-    "fabric-gametest": [
-      "com.fluffybacon.merchantvillager.gametest.MerchantPostGameTests",
-      "com.fluffybacon.merchantvillager.gametest.MerchantProfessionGameTest",
-      "com.fluffybacon.merchantvillager.gametest.MerchantTradingGameTest",
-      "com.fluffybacon.merchantvillager.gametest.MerchantRecoveryGameTest"
-    ],
     "fabric-datagen": [
       "com.fluffybacon.merchantvillager.datagen.MerchantVillagerDataGenerator"
     ]

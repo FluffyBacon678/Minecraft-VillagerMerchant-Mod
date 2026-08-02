@@ -22,12 +22,13 @@ jobs:
           cache: gradle
 
       - name: Verify mod and gameplay loop
-        run: ./gradlew build runGametest --no-daemon --stacktrace
+        run: ./gradlew build --no-daemon --stacktrace
 
   client-gui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true"
       LIBGL_ALWAYS_SOFTWARE: "true"
       ALSOFT_DRIVERS: "null"
     steps:
