@@ -2,6 +2,7 @@ package com.fluffybacon.merchantvillager.clienttest;
 
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.client.ClientCatalogueCache;
+import com.fluffybacon.merchantvillager.clienttest.mixin.GameOptionsAccessor;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
@@ -46,8 +47,12 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             client.options.getGuiScale().setValue(3);
             client.options.getViewDistance().setValue(2);
             client.options.getSimulationDistance().setValue(5);
+            ((GameOptionsAccessor)client.options).merchantVillager$setUseNativeTransport(false);
             client.onResolutionChanged();
         });
+        if (context.computeOnClient(client -> client.options.shouldUseNativeTransport())) {
+            throw new AssertionError("Client GameTest must use Java NIO transport");
+        }
 
         Properties serverProperties = new Properties();
         serverProperties.setProperty("level-name", "merchant-client-gui-world");
@@ -58,6 +63,7 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
         serverProperties.setProperty("view-distance", "2");
         serverProperties.setProperty("simulation-distance", "2");
         serverProperties.setProperty("max-tick-time", "-1");
+        serverProperties.setProperty("use-native-transport", "false");
 
         try (
             TestDedicatedServerContext testServer =

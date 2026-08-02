@@ -212,6 +212,10 @@ public final class MerchantWorkerState {
         pathRetries++;
     }
 
+    public void pathSucceeded() {
+        pathRetries = 0;
+    }
+
     public long reservationExpiry() {
         return reservationExpiry;
     }

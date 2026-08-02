@@ -17,6 +17,7 @@ import net.minecraft.block.entity.HopperBlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ai.brain.Activity;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
+import net.minecraft.entity.ai.brain.WalkTarget;
 import net.minecraft.entity.ai.pathing.Path;
 import net.minecraft.entity.passive.MerchantEntity;
 import net.minecraft.entity.passive.VillagerEntity;
@@ -36,7 +37,7 @@ public final class MerchantController {
             return;
         }
         if (state.postPos() != null && !state.isPostIn(world)) {
-            villager.getNavigation().stop();
+            stopMerchantNavigation(villager);
             state.status("Merchant is outside its assigned Merchant's Post dimension");
             return;
         }
@@ -65,6 +66,10 @@ public final class MerchantController {
             recoverWithoutPost(world, villager, state);
             return;
         }
+        // Vanilla navigation only searches 16 blocks by default. Merchant jobs
+        // advertise a hard 66-block tether, so use that same bound for the
+        // navigator instead of depending on a chain of partial paths.
+        villager.getNavigation().setMaxFollowRange(MerchantVillagerConfig.EXTENDED_RADIUS);
         if (!merchantProfession
             && state.state() != MerchantState.RECOVERING
             && state.state() != MerchantState.RETURNING_TO_POST
@@ -82,8 +87,9 @@ public final class MerchantController {
             recover(state, "Trade reservation expired");
         }
         if (villager.squaredDistanceTo(post.getPos().toCenterPos())
-            > MerchantVillagerConfig.EXTENDED_RADIUS * MerchantVillagerConfig.EXTENDED_RADIUS) {
-            villager.getNavigation().stop();
+            > MerchantVillagerConfig.EXTENDED_RADIUS * MerchantVillagerConfig.EXTENDED_RADIUS
+            && state.state() != MerchantState.RETURNING_TO_POST) {
+            stopMerchantNavigation(villager);
             state.fail("Merchant exceeded its absolute tether");
             state.enter(MerchantState.RETURNING_TO_POST, "Returning inside Merchant's Post tether");
         }
@@ -182,6 +188,7 @@ public final class MerchantController {
             }
         }
         villager.getBrain().forget(MemoryModuleType.JOB_SITE);
+        villager.getNavigation().setMaxFollowRange(0.0F);
         ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
         state.clearPostAssignment(reason);
     }
@@ -390,7 +397,7 @@ public final class MerchantController {
         } else if (state.stateTicks() >= MerchantVillagerConfig.TARGET_BUSY_TIMEOUT) {
             recover(state, "Target merchant remained occupied");
         } else {
-            villager.getNavigation().stop();
+            stopMerchantNavigation(villager);
             state.status(target.hasCustomer()
                 ? "Merchant is currently trading with a player"
                 : "Waiting for target merchant to become available");
@@ -472,10 +479,12 @@ public final class MerchantController {
     ) {
         MerchantEntity target = resolveTarget(world, state);
         if (target == null || !target.isAlive()) {
+            stopMerchantNavigation(villager);
             recover(state, "Target merchant disappeared");
             return;
         }
         if (!TargetMerchantAvailability.canTradeNow(target)) {
+            stopMerchantNavigation(villager);
             state.enter(MerchantState.WAITING_FOR_TARGET, target.hasCustomer()
                 ? "Merchant is currently trading with a player"
                 : "Waiting for target merchant to become available");
@@ -484,12 +493,13 @@ public final class MerchantController {
         double targetFromPost = target.squaredDistanceTo(post.getPos().toCenterPos());
         if (targetFromPost > MerchantVillagerConfig.EXTENDED_RADIUS
             * MerchantVillagerConfig.EXTENDED_RADIUS) {
+            stopMerchantNavigation(villager);
             recover(state, "Target moved outside range");
             return;
         }
         if (villager.squaredDistanceTo(target) <= MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED
             && MerchantTradeExecutor.hasInteractionLine(villager, target)) {
-            villager.getNavigation().stop();
+            stopMerchantNavigation(villager);
             state.enter(MerchantState.EXECUTING_TRADES, "Trading with target merchant");
             return;
         }
@@ -560,7 +570,7 @@ public final class MerchantController {
         ServerWorld world, VillagerEntity villager, MerchantWorkerState state, MerchantPostBlockEntity post
     ) {
         if (villager.squaredDistanceTo(post.getPos().toCenterPos()) <= 9.0) {
-            villager.getNavigation().stop();
+            stopMerchantNavigation(villager);
             state.enter(
                 state.hasInputs() ? MerchantState.RETURNING_UNUSED_INPUTS : MerchantState.FINDING_OUTPUT_CHEST,
                 state.hasInputs() ? "Returning unused trade inputs" : "Searching for output chest"
@@ -610,11 +620,12 @@ public final class MerchantController {
         BlockPos chest = state.outputChest();
         if (chest == null
             || OutputChestFinder.touchingChestInventory(world, post.getPos(), chest) == null) {
+            stopMerchantNavigation(villager);
             state.enter(MerchantState.FINDING_OUTPUT_CHEST, "Output chest changed");
             return;
         }
         if (villager.squaredDistanceTo(chest.toCenterPos()) <= 9.0) {
-            villager.getNavigation().stop();
+            stopMerchantNavigation(villager);
             state.enter(MerchantState.DEPOSITING_REWARDS, "Depositing trade rewards");
             return;
         }
@@ -772,17 +783,26 @@ public final class MerchantController {
         MerchantWorkerState state,
         MerchantPostBlockEntity post
     ) {
+        // Villager core tasks own WALK_TARGET and PATH. Publishing the courier
+        // destination here keeps the vanilla WORK activity and our direct
+        // navigation request aligned instead of letting the job-site task
+        // replace the merchant route on the next brain tick.
+        villager.getBrain().remember(
+            MemoryModuleType.WALK_TARGET,
+            new WalkTarget(target, 0.55F, 3)
+        );
+        boolean initialAttempt = state.stateTicks() <= 1;
         boolean scheduledRetry =
             state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL == 0;
-        if (!scheduledRetry && !villager.getNavigation().isIdle()) {
+        if (!initialAttempt && !scheduledRetry) {
             return;
         }
-        if (scheduledRetry) {
+        if (!villager.getNavigation().isIdle()) {
             // EntityNavigation may keep an unfinished route to an entity's old
             // position after that entity moves. It can also reuse a route that
             // reports reaching a distant target but ends at a stale endpoint.
-            // Refresh once per second from both entities' current positions so
-            // neither case can leave the merchant parked at a stale endpoint.
+            // Refresh the initial route and scheduled retries from both
+            // entities' current positions.
             villager.getNavigation().stop();
         }
         if (!villager.getNavigation().startMovingTo(
@@ -794,15 +814,19 @@ public final class MerchantController {
                     state.offerFingerprint(),
                     world.getTime() + MerchantVillagerConfig.UNREACHABLE_COOLDOWN
                 );
+                stopMerchantNavigation(villager);
                 recover(state, "Target unreachable");
             }
-        } else if (pathExceedsTether(villager.getNavigation().getCurrentPath(), post.getPos())) {
-            villager.getNavigation().stop();
-            post.markUnreachable(
-                state.offerFingerprint(),
-                world.getTime() + MerchantVillagerConfig.UNREACHABLE_COOLDOWN
-            );
-            recover(state, "Target path would exceed Merchant's Post tether");
+        } else {
+            state.pathSucceeded();
+            if (pathExceedsTether(villager.getNavigation().getCurrentPath(), post.getPos())) {
+                stopMerchantNavigation(villager);
+                post.markUnreachable(
+                    state.offerFingerprint(),
+                    world.getTime() + MerchantVillagerConfig.UNREACHABLE_COOLDOWN
+                );
+                recover(state, "Target path would exceed Merchant's Post tether");
+            }
         }
     }
 
@@ -823,18 +847,38 @@ public final class MerchantController {
     private static void navigate(
         VillagerEntity villager, BlockPos target, MerchantWorkerState state, String failure
     ) {
-        if (state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL != 0
-            && !villager.getNavigation().isIdle()) {
+        villager.getBrain().remember(
+            MemoryModuleType.WALK_TARGET,
+            new WalkTarget(target, 0.55F, 2)
+        );
+        boolean initialAttempt = state.stateTicks() <= 1;
+        boolean scheduledRetry =
+            state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL == 0;
+        if (!initialAttempt && !scheduledRetry) {
             return;
+        }
+        if (!villager.getNavigation().isIdle()) {
+            // Force a fresh route instead of allowing EntityNavigation to
+            // return its cached unfinished path for the same block target.
+            villager.getNavigation().stop();
         }
         if (!villager.getNavigation().startMovingTo(
             target.getX() + 0.5, target.getY(), target.getZ() + 0.5, 0.55
         )) {
             state.pathRetried();
             if (state.pathRetries() >= MerchantVillagerConfig.MAX_PATH_RETRIES) {
+                stopMerchantNavigation(villager);
                 recover(state, failure);
             }
+        } else {
+            state.pathSucceeded();
         }
+    }
+
+    private static void stopMerchantNavigation(VillagerEntity villager) {
+        villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+        villager.getBrain().forget(MemoryModuleType.PATH);
+        villager.getNavigation().stop();
     }
 
     private static List<ItemStack> rewardStacks(MerchantWorkerState state) {

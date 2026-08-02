@@ -4,7 +4,8 @@
   "package": "com.fluffybacon.merchantvillager.clienttest.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "ClientGameTestWorldLoadTimeoutMixin"
+    "ClientGameTestWorldLoadTimeoutMixin",
+    "GameOptionsAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
