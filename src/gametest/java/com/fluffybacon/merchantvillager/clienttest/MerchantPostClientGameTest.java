@@ -2,22 +2,16 @@ package com.fluffybacon.merchantvillager.clienttest;
 
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.client.ClientCatalogueCache;
-import com.fluffybacon.merchantvillager.clienttest.mixin.GameOptionsAccessor;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
 import com.fluffybacon.merchantvillager.screen.client.MerchantPostScreen;
-import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.SocketAddress;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
-import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerConnection;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
@@ -48,31 +42,15 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             client.options.getGuiScale().setValue(3);
             client.options.getViewDistance().setValue(2);
             client.options.getSimulationDistance().setValue(5);
-            ((GameOptionsAccessor)client.options).merchantVillager$setUseNativeTransport(false);
+            // Keep software-rendered CI from starving the integrated server thread.
+            client.options.getMaxFps().setValue(30);
+            client.options.getEnableVsync().setValue(false);
             client.onResolutionChanged();
         });
-        if (context.computeOnClient(client -> client.options.shouldUseNativeTransport())) {
-            throw new AssertionError("Client GameTest must use Java NIO transport");
-        }
 
-        Properties serverProperties = new Properties();
-        serverProperties.setProperty("level-name", "merchant-client-gui-world");
-        // Fabric connects through localhost; CI forces the JVM IPv4 stack so
-        // both the hardcoded client address and this exact bind use 127.0.0.1.
-        serverProperties.setProperty("server-ip", "127.0.0.1");
-        serverProperties.setProperty("server-port", Integer.toString(findFreePort()));
-        serverProperties.setProperty("view-distance", "2");
-        serverProperties.setProperty("simulation-distance", "2");
-        serverProperties.setProperty("max-tick-time", "-1");
-        serverProperties.setProperty("use-native-transport", "false");
-
-        try (
-            TestDedicatedServerContext testServer =
-                context.worldBuilder().createServer(serverProperties);
-            TestServerConnection connection = connectThroughLocalTransport(testServer)
-        ) {
-            connection.getClientWorld().waitForChunksDownload(CHUNK_WAIT_TICKS);
-            BlockPos postPos = testServer.computeOnServer(server -> {
+        try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
+            singleplayer.getClientWorld().waitForChunksDownload(CHUNK_WAIT_TICKS);
+            BlockPos postPos = singleplayer.getServer().computeOnServer(server -> {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 ServerWorld world = server.getOverworld();
                 BlockPos position = player.getBlockPos().add(3, 0, 2);
@@ -203,11 +181,11 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             int previousRevision = context.computeOnClient(
                 client -> ClientCatalogueCache.latest().revision()
             );
-            testServer.runOnServer(server ->
+            singleplayer.getServer().runOnServer(server ->
                 server.getPlayerManager().getPlayerList().getFirst().closeHandledScreen()
             );
             context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
-            testServer.runOnServer(server -> {
+            singleplayer.getServer().runOnServer(server -> {
                 ServerWorld world = server.getOverworld();
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 if (world.getBlockEntity(postPos) instanceof MerchantPostBlockEntity oldPost) {
@@ -234,7 +212,7 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                 && ClientCatalogueCache.latest().revision() < previousRevision,
                 CLIENT_WAIT_TICKS);
 
-            testServer.runOnServer(server -> {
+            singleplayer.getServer().runOnServer(server -> {
                 ServerWorld world = server.getOverworld();
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 world.getEntitiesByClass(
@@ -258,33 +236,9 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             });
             context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
             context.runOnClient(client -> client.options.hudHidden = true);
-            connection.getClientWorld().waitForChunksRender(CHUNK_WAIT_TICKS);
+            singleplayer.getClientWorld().waitForChunksRender(CHUNK_WAIT_TICKS);
             context.waitTicks(10);
             context.takeScreenshot("merchant-villager-original-outfit");
-        }
-    }
-
-    private static TestServerConnection connectThroughLocalTransport(
-        TestDedicatedServerContext testServer
-    ) {
-        SocketAddress localAddress = testServer.computeOnServer(
-            server -> server.getNetworkIo().bindLocal()
-        );
-        ClientTestLocalTransport.arm(localAddress);
-        try {
-            return testServer.connect();
-        } catch (RuntimeException | Error exception) {
-            ClientTestLocalTransport.disarm(localAddress);
-            throw exception;
-        }
-    }
-
-    private static int findFreePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
-        } catch (IOException exception) {
-            throw new AssertionError("Could not reserve a local port for the client GameTest", exception);
         }
     }
 
