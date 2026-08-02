@@ -42,9 +42,7 @@ jobs:
           cache: gradle
 
       - name: Verify the real Merchant Post client screen
-        run: >-
-          xvfb-run -a -s "-screen 0 1024x768x24"
-          ./gradlew runClientGameTest --no-daemon --stacktrace
+        run: ./gradlew runClientGameTest --no-daemon --stacktrace
 
       - name: Upload client test evidence
         if: always()

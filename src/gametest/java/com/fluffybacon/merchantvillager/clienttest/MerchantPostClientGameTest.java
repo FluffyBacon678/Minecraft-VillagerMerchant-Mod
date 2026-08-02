@@ -51,7 +51,8 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
 
         Properties serverProperties = new Properties();
         serverProperties.setProperty("level-name", "merchant-client-gui-world");
-        serverProperties.setProperty("server-ip", "127.0.0.1");
+        // Fabric connects to "localhost", which may resolve to IPv6 on Linux.
+        // Leave server-ip unset so the test server accepts either loopback family.
         serverProperties.setProperty("server-port", Integer.toString(findFreePort()));
         serverProperties.setProperty("view-distance", "2");
         serverProperties.setProperty("simulation-distance", "2");
