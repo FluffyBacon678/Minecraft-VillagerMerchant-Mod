@@ -7,11 +7,15 @@ import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
 import com.fluffybacon.merchantvillager.screen.client.MerchantPostScreen;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerConnection;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.SpawnReason;
@@ -32,17 +36,34 @@ import net.minecraft.village.VillagerProfession;
 
 @SuppressWarnings("UnstableApiUsage")
 public final class MerchantPostClientGameTest implements FabricClientGameTest {
+    private static final int CLIENT_WAIT_TICKS = 20 * 30;
+    private static final int CHUNK_WAIT_TICKS = 20 * 60 * 3;
+
     @Override
     public void runTest(ClientGameTestContext context) {
         context.getInput().resizeWindow(1024, 768);
         context.runOnClient(client -> {
             client.options.getGuiScale().setValue(3);
+            client.options.getViewDistance().setValue(2);
+            client.options.getSimulationDistance().setValue(5);
             client.onResolutionChanged();
         });
 
-        try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
-            singleplayer.getClientWorld().waitForChunksDownload();
-            BlockPos postPos = singleplayer.getServer().computeOnServer(server -> {
+        Properties serverProperties = new Properties();
+        serverProperties.setProperty("level-name", "merchant-client-gui-world");
+        serverProperties.setProperty("server-ip", "127.0.0.1");
+        serverProperties.setProperty("server-port", Integer.toString(findFreePort()));
+        serverProperties.setProperty("view-distance", "2");
+        serverProperties.setProperty("simulation-distance", "2");
+        serverProperties.setProperty("max-tick-time", "-1");
+
+        try (
+            TestDedicatedServerContext testServer =
+                context.worldBuilder().createServer(serverProperties);
+            TestServerConnection connection = testServer.connect()
+        ) {
+            connection.getClientWorld().waitForChunksDownload(CHUNK_WAIT_TICKS);
+            BlockPos postPos = testServer.computeOnServer(server -> {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 ServerWorld world = server.getOverworld();
                 BlockPos position = player.getBlockPos().add(3, 0, 2);
@@ -136,12 +157,16 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             if (postPos.equals(BlockPos.ORIGIN)) {
                 throw new AssertionError("Regression setup must open a non-origin Merchant's Post");
             }
-            context.waitForScreen(MerchantPostScreen.class);
+            context.waitFor(
+                client -> client.currentScreen instanceof MerchantPostScreen,
+                CLIENT_WAIT_TICKS
+            );
             context.waitFor(client -> ClientCatalogueCache.latest() != null
                 && ClientCatalogueCache.latest().entries().size() == 4
-                && ClientCatalogueCache.latest().workerUuid().isPresent());
+                && ClientCatalogueCache.latest().workerUuid().isPresent(), CLIENT_WAIT_TICKS);
             context.waitFor(client -> client.player != null
-                && client.player.currentScreenHandler.getSlot(0).getStack().isOf(Items.EMERALD));
+                && client.player.currentScreenHandler.getSlot(0).getStack().isOf(Items.EMERALD),
+                CLIENT_WAIT_TICKS);
             context.runOnClient(client -> {
                 if (!(client.currentScreen instanceof MerchantPostScreen screen)) {
                     throw new AssertionError("Merchant Post screen did not remain open");
@@ -161,6 +186,7 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                 if (screen.getScreenHandler().getSlot(8).x + 16 > 320) {
                     throw new AssertionError("Rightmost backpack slot exceeds the compact screen width");
                 }
+                client.getToastManager().clear();
             });
             context.waitTicks(2);
             context.takeScreenshot("merchant-post-non-origin-compact");
@@ -168,11 +194,11 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             int previousRevision = context.computeOnClient(
                 client -> ClientCatalogueCache.latest().revision()
             );
-            singleplayer.getServer().runOnServer(server ->
+            testServer.runOnServer(server ->
                 server.getPlayerManager().getPlayerList().getFirst().closeHandledScreen()
             );
-            context.waitForScreen(null);
-            singleplayer.getServer().runOnServer(server -> {
+            context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
+            testServer.runOnServer(server -> {
                 ServerWorld world = server.getOverworld();
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 if (world.getBlockEntity(postPos) instanceof MerchantPostBlockEntity oldPost) {
@@ -190,12 +216,16 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                 player.openHandledScreen(replacement);
                 replacement.sendCatalogue(player);
             });
-            context.waitForScreen(MerchantPostScreen.class);
+            context.waitFor(
+                client -> client.currentScreen instanceof MerchantPostScreen,
+                CLIENT_WAIT_TICKS
+            );
             context.waitFor(client -> ClientCatalogueCache.latest() != null
                 && ClientCatalogueCache.latest().postPos().equals(postPos)
-                && ClientCatalogueCache.latest().revision() < previousRevision);
+                && ClientCatalogueCache.latest().revision() < previousRevision,
+                CLIENT_WAIT_TICKS);
 
-            singleplayer.getServer().runOnServer(server -> {
+            testServer.runOnServer(server -> {
                 ServerWorld world = server.getOverworld();
                 ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
                 world.getEntitiesByClass(
@@ -217,11 +247,20 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                     true
                 );
             });
-            context.waitForScreen(null);
+            context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
             context.runOnClient(client -> client.options.hudHidden = true);
-            singleplayer.getClientWorld().waitForChunksRender();
+            connection.getClientWorld().waitForChunksRender(CHUNK_WAIT_TICKS);
             context.waitTicks(10);
             context.takeScreenshot("merchant-villager-original-outfit");
+        }
+    }
+
+    private static int findFreePort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        } catch (IOException exception) {
+            throw new AssertionError("Could not reserve a local port for the client GameTest", exception);
         }
     }
 

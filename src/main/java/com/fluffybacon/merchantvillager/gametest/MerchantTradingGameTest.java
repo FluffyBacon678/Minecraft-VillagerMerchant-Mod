@@ -1,6 +1,7 @@
 package com.fluffybacon.merchantvillager.gametest;
 
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
+import com.fluffybacon.merchantvillager.config.MerchantVillagerConfig;
 import com.fluffybacon.merchantvillager.inventory.OutputChestFinder;
 import com.fluffybacon.merchantvillager.merchant.MerchantController;
 import com.fluffybacon.merchantvillager.merchant.MerchantTradeExecutor;
@@ -810,6 +811,14 @@ public final class MerchantTradingGameTest {
         context.setBlockState(chestPos, Blocks.CHEST);
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, y, 2));
         VillagerEntity target = spawnVillager(context, targetPos);
+        double initialTargetDistance = Math.sqrt(
+            target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos())
+        );
+        context.assertTrue(
+            initialTargetDistance > MerchantVillagerConfig.NORMAL_RADIUS
+                && initialTargetDistance <= MerchantVillagerConfig.EXTENDED_RADIUS,
+            "Regression target must start in the 55-to-66-block meet-halfway zone"
+        );
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
@@ -895,7 +904,12 @@ public final class MerchantTradingGameTest {
                 "Extended target reward must return to the output chest" + diagnostics
             );
             context.assertTrue(
-                maximumWorkerDistance[0] <= 66.25,
+                Math.sqrt(target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos()))
+                    <= MerchantVillagerConfig.NORMAL_RADIUS,
+                "Extended target must approach into the normal 55-block radius before being pursued"
+            );
+            context.assertTrue(
+                maximumWorkerDistance[0] <= MerchantVillagerConfig.EXTENDED_RADIUS + 0.25,
                 "Merchant must remain inside the absolute 66-block tether"
             );
             context.complete();

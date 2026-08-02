@@ -9,6 +9,9 @@
       "com.fluffybacon.merchantvillager.clienttest.MerchantPostClientGameTest"
     ]
   },
+  "mixins": [
+    "merchant_villager_client_test.mixins.json"
+  ],
   "depends": {
     "merchant_villager": "*",
     "fabric-client-gametest-api-v1": "*"

@@ -26,6 +26,10 @@ jobs:
 
   client-gui:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "true"
+      ALSOFT_DRIVERS: "null"
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -38,12 +42,17 @@ jobs:
           cache: gradle
 
       - name: Verify the real Merchant Post client screen
-        run: xvfb-run -a ./gradlew runClientGameTest --no-daemon --stacktrace
+        run: >-
+          xvfb-run -a -s "-screen 0 1024x768x24"
+          ./gradlew runClientGameTest --no-daemon --stacktrace
 
-      - name: Upload client test screenshot
+      - name: Upload client test evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: merchant-post-client-screenshot
-          path: build/run/clientGameTest/screenshots
+          name: merchant-post-client-test-${{ github.run_attempt }}
+          path: |
+            build/run/clientGameTest/screenshots
+            build/run/clientGameTest/logs
+            build/run/clientGameTest/crash-reports
           if-no-files-found: warn

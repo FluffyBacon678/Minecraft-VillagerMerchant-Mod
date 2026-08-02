@@ -772,9 +772,20 @@ public final class MerchantController {
         MerchantWorkerState state,
         MerchantPostBlockEntity post
     ) {
-        if (state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL != 0
-            && !villager.getNavigation().isIdle()) {
+        boolean scheduledRetry =
+            state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL == 0;
+        if (!scheduledRetry && !villager.getNavigation().isIdle()) {
             return;
+        }
+        Path currentPath = villager.getNavigation().getCurrentPath();
+        if (scheduledRetry && currentPath != null && !currentPath.reachesTarget()) {
+            // EntityNavigation caches an unfinished path while the target stays
+            // in the same block. A target initially beyond the pathfinder's
+            // follow range can therefore leave the worker parked at the end of
+            // a partial path forever. Re-plan the next segment from the
+            // worker's new position while retaining vanilla caching for paths
+            // that already reach their target.
+            villager.getNavigation().stop();
         }
         if (!villager.getNavigation().startMovingTo(target, 0.55)) {
             state.pathRetried();

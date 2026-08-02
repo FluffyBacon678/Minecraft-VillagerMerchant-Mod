@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.fluffybacon.merchantvillager.clienttest.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ClientGameTestWorldLoadTimeoutMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
