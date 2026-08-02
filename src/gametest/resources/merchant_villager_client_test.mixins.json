@@ -4,6 +4,7 @@
   "package": "com.fluffybacon.merchantvillager.clienttest.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "ClientConnectionLocalTransportMixin",
     "ClientGameTestWorldLoadTimeoutMixin",
     "GameOptionsAccessor",
     "TestDedicatedServerAddressMixin"

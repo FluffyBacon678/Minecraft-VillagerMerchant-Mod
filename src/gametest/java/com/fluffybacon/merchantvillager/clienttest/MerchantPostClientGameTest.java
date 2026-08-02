@@ -10,6 +10,7 @@ import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
 import com.fluffybacon.merchantvillager.screen.client.MerchantPostScreen;
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
@@ -68,7 +69,7 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
         try (
             TestDedicatedServerContext testServer =
                 context.worldBuilder().createServer(serverProperties);
-            TestServerConnection connection = testServer.connect()
+            TestServerConnection connection = connectThroughLocalTransport(testServer)
         ) {
             connection.getClientWorld().waitForChunksDownload(CHUNK_WAIT_TICKS);
             BlockPos postPos = testServer.computeOnServer(server -> {
@@ -260,6 +261,21 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             connection.getClientWorld().waitForChunksRender(CHUNK_WAIT_TICKS);
             context.waitTicks(10);
             context.takeScreenshot("merchant-villager-original-outfit");
+        }
+    }
+
+    private static TestServerConnection connectThroughLocalTransport(
+        TestDedicatedServerContext testServer
+    ) {
+        SocketAddress localAddress = testServer.computeOnServer(
+            server -> server.getNetworkIo().bindLocal()
+        );
+        ClientTestLocalTransport.arm(localAddress);
+        try {
+            return testServer.connect();
+        } catch (RuntimeException | Error exception) {
+            ClientTestLocalTransport.disarm(localAddress);
+            throw exception;
         }
     }
 
