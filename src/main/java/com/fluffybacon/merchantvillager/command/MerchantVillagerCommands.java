@@ -72,7 +72,7 @@ public final class MerchantVillagerCommands {
                 post.getAssignedMerchant().orElseThrow(),
                 source.getWorld().getTime()
             );
-        String chestCapacity = outputChestStatus(source, worker);
+        String chestCapacity = outputChestStatus(source, post, worker);
         context.getSource().sendFeedback(() -> Text.literal(
             "Merchant's Post " + post.getPos()
                 + " | worker=" + post.getAssignedMerchant().map(Object::toString).orElse("none")
@@ -154,13 +154,14 @@ public final class MerchantVillagerCommands {
     }
 
     private static String outputChestStatus(
-        ServerCommandSource source, MerchantWorkerState worker
+        ServerCommandSource source, MerchantPostBlockEntity post, MerchantWorkerState worker
     ) {
         if (worker == null || worker.outputChest() == null) {
             return "not selected";
         }
-        Inventory chest = com.fluffybacon.merchantvillager.inventory.OutputChestFinder.chestInventory(
+        Inventory chest = com.fluffybacon.merchantvillager.inventory.OutputChestFinder.touchingChestInventory(
             source.getWorld(),
+            post.getPos(),
             worker.outputChest()
         );
         if (chest == null) {

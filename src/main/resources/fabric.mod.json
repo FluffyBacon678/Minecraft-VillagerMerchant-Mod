@@ -5,7 +5,13 @@
   "name": "Merchant Villager",
   "description": "A physical villager worker that performs approved real merchant trades and delivers rewards.",
   "authors": ["FluffyBacon"],
+  "contact": {
+    "homepage": "https://github.com/FluffyBacon678/Minecraft-VillagerMerchant-Mod",
+    "sources": "https://github.com/FluffyBacon678/Minecraft-VillagerMerchant-Mod",
+    "issues": "https://github.com/FluffyBacon678/Minecraft-VillagerMerchant-Mod/issues"
+  },
   "license": "CC0-1.0",
+  "icon": "assets/merchant_villager/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [

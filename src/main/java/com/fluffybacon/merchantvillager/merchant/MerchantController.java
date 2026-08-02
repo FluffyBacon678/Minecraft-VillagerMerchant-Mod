@@ -32,7 +32,24 @@ public final class MerchantController {
     public static void tick(ServerWorld world, VillagerEntity villager, MerchantWorkerState state) {
         boolean merchantProfession =
             villager.getVillagerData().profession().matchesKey(ModVillagerProfessions.MERCHANT_KEY);
-        if (villager.isBaby() || (!merchantProfession && !state.hasCargo())) {
+        if (villager.isBaby()) {
+            return;
+        }
+        if (state.postPos() != null && !state.isPostIn(world)) {
+            villager.getNavigation().stop();
+            state.status("Merchant is outside its assigned Merchant's Post dimension");
+            return;
+        }
+        boolean validMerchantJobSite = hasValidMerchantJobSite(world, villager, state);
+        if (!state.hasCargo()
+            && ((!merchantProfession && state.postPos() != null)
+                || (merchantProfession && state.postPos() != null && !validMerchantJobSite))) {
+            detachInvalidPost(world, villager, state, merchantProfession
+                ? "Merchant job site was lost"
+                : "Merchant profession was lost");
+            return;
+        }
+        if (!merchantProfession && !state.hasCargo()) {
             return;
         }
         state.tickAge();
@@ -113,6 +130,8 @@ public final class MerchantController {
         Optional<GlobalPos> jobSite = villager.getBrain().getOptionalRegisteredMemory(MemoryModuleType.JOB_SITE);
         if (jobSite.isPresent()
             && jobSite.get().dimension().equals(world.getRegistryKey())
+            && (state.postPos() == null
+                || (state.isPostIn(world) && state.postPos().equals(jobSite.get().pos())))
             && world.getBlockEntity(jobSite.get().pos()) instanceof MerchantPostBlockEntity post) {
             state.bindPost(world, jobSite.get().pos());
             post.assignMerchant(villager.getUuid());
@@ -124,6 +143,47 @@ public final class MerchantController {
             return post;
         }
         return null;
+    }
+
+    private static boolean hasValidMerchantJobSite(
+        ServerWorld world, VillagerEntity villager, MerchantWorkerState state
+    ) {
+        if (!state.isPostIn(world) || state.postPos() == null) {
+            return false;
+        }
+        return villager.getBrain().getOptionalRegisteredMemory(MemoryModuleType.JOB_SITE)
+            .filter(jobSite -> jobSite.dimension().equals(world.getRegistryKey()))
+            .map(GlobalPos::pos)
+            .filter(state.postPos()::equals)
+            .filter(jobSite -> world.getBlockEntity(jobSite) instanceof MerchantPostBlockEntity)
+            .isPresent();
+    }
+
+    /**
+     * Releases both the mod assignment and vanilla POI ticket. This only runs
+     * once cargo has been settled, so a profession or job-site change cannot
+     * make reserved inputs or completed rewards disappear.
+     */
+    private static void detachInvalidPost(
+        ServerWorld world, VillagerEntity villager, MerchantWorkerState state, String reason
+    ) {
+        BlockPos formerPost = state.isPostIn(world) ? state.postPos() : null;
+        if (formerPost != null
+            && world.getBlockEntity(formerPost) instanceof MerchantPostBlockEntity post
+            && post.getAssignedMerchant().filter(villager.getUuid()::equals).isPresent()) {
+            post.clearMerchant(villager.getUuid());
+            if (world.getPointOfInterestStorage().getType(formerPost)
+                .filter(type -> type.matchesKey(
+                    com.fluffybacon.merchantvillager.registry.ModPointOfInterests.MERCHANT_POST_KEY
+                ))
+                .isPresent()
+                && world.getPointOfInterestStorage().releaseTicket(formerPost)) {
+                world.getSubscriptionTracker().onPoiUpdated(formerPost);
+            }
+        }
+        villager.getBrain().forget(MemoryModuleType.JOB_SITE);
+        ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
+        state.clearPostAssignment(reason);
     }
 
     /**
@@ -427,7 +487,8 @@ public final class MerchantController {
             recover(state, "Target moved outside range");
             return;
         }
-        if (villager.squaredDistanceTo(target) <= MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED) {
+        if (villager.squaredDistanceTo(target) <= MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED
+            && MerchantTradeExecutor.hasInteractionLine(villager, target)) {
             villager.getNavigation().stop();
             state.enter(MerchantState.EXECUTING_TRADES, "Trading with target merchant");
             return;
@@ -632,6 +693,12 @@ public final class MerchantController {
             return;
         }
         if (villager.squaredDistanceTo(former.toCenterPos()) > 9.0) {
+            if (state.stateTicks() > 200) {
+                villager.getNavigation().stop();
+                state.dropCargoOnce(villager);
+                ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
+                return;
+            }
             villager.getNavigation().startMovingTo(
                 former.getX() + 0.5, former.getY(), former.getZ() + 0.5, 0.55
             );

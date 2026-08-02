@@ -5,6 +5,7 @@ import com.fluffybacon.merchantvillager.merchant.MerchantController;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.merchant.ReservationManager;
+import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -49,13 +50,35 @@ public abstract class VillagerEntityMixin implements MerchantWorker {
     private void merchantVillager$dropCargo(DamageSource source, CallbackInfo ci) {
         VillagerEntity villager = (VillagerEntity)(Object)this;
         if (villager.getEntityWorld() instanceof ServerWorld world) {
-            if (merchantVillager$state.isPostIn(world)
-                && merchantVillager$state.postPos() != null
-                && world.getBlockEntity(merchantVillager$state.postPos()) instanceof MerchantPostBlockEntity post) {
-                post.clearMerchant(villager.getUuid());
-            }
-            merchantVillager$state.dropCargoOnce(villager);
-            ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
+            merchantVillager$settleDestructiveRemoval(world, villager);
         }
+    }
+
+    /**
+     * Lightning converts a villager directly into a witch without invoking
+     * VillagerEntity#onDeath. Run the same one-time cargo/assignment cleanup
+     * only after vanilla confirms the original villager was discarded.
+     */
+    @Inject(method = "onStruckByLightning", at = @At("RETURN"))
+    private void merchantVillager$recoverLightningConversion(
+        ServerWorld world, LightningEntity lightning, CallbackInfo ci
+    ) {
+        VillagerEntity villager = (VillagerEntity)(Object)this;
+        if (villager.isRemoved()) {
+            merchantVillager$settleDestructiveRemoval(world, villager);
+        }
+    }
+
+    @Unique
+    private void merchantVillager$settleDestructiveRemoval(
+        ServerWorld world, VillagerEntity villager
+    ) {
+        if (merchantVillager$state.isPostIn(world)
+            && merchantVillager$state.postPos() != null
+            && world.getBlockEntity(merchantVillager$state.postPos()) instanceof MerchantPostBlockEntity post) {
+            post.clearMerchant(villager.getUuid());
+        }
+        merchantVillager$state.dropCargoOnce(villager);
+        ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
     }
 }

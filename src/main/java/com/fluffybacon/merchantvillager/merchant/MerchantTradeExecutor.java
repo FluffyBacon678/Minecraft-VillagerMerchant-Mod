@@ -8,6 +8,7 @@ import net.minecraft.entity.passive.MerchantEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.village.TradeOffer;
+import net.minecraft.world.RaycastContext;
 
 public final class MerchantTradeExecutor {
     public static boolean executeOne(
@@ -21,6 +22,7 @@ public final class MerchantTradeExecutor {
             || target.getEntityWorld() != world
             || worker.getEntityWorld() != world
             || worker.squaredDistanceTo(target) > MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED
+            || !hasInteractionLine(worker, target)
             || !post.isEnabled(state.offerFingerprint())
             || state.offerIndex() < 0
             || state.offerIndex() >= target.getOffers().size()) {
@@ -61,6 +63,21 @@ public final class MerchantTradeExecutor {
         target.trade(offer);
         state.completeExecution();
         return true;
+    }
+
+    /**
+     * Vanilla player interaction can hit an entity's body as well as its eye
+     * position. Accept either unobstructed ray while still rejecting trades
+     * through full blocks.
+     */
+    public static boolean hasInteractionLine(VillagerEntity worker, MerchantEntity target) {
+        return worker.canSee(target)
+            || worker.canSee(
+                target,
+                RaycastContext.ShapeType.COLLIDER,
+                RaycastContext.FluidHandling.NONE,
+                target.getY() + target.getHeight() * 0.5
+            );
     }
 
     private MerchantTradeExecutor() {

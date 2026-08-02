@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.LockableContainerBlockEntity;
 import net.minecraft.entity.Entity;
@@ -36,7 +37,8 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.village.TradedItem;
 import org.jspecify.annotations.Nullable;
 
-public final class MerchantPostBlockEntity extends LockableContainerBlockEntity implements SidedInventory {
+public final class MerchantPostBlockEntity extends LockableContainerBlockEntity
+    implements SidedInventory, ExtendedScreenHandlerFactory<BlockPos> {
     public static final int INVENTORY_SIZE = 27;
     private static final int[] SLOTS = createSlots();
     private static final long PERMISSION_EXPIRY_TICKS = 20L * 60L * 60L * 24L * 7L;
@@ -427,6 +429,11 @@ public final class MerchantPostBlockEntity extends LockableContainerBlockEntity 
     @Override
     protected ScreenHandler createScreenHandler(int syncId, PlayerInventory playerInventory) {
         return new MerchantPostScreenHandler(syncId, playerInventory, this);
+    }
+
+    @Override
+    public BlockPos getScreenOpeningData(ServerPlayerEntity player) {
+        return pos.toImmutable();
     }
 
     @Override

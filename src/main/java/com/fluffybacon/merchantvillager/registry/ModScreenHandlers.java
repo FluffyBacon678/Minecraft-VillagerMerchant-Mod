@@ -2,17 +2,18 @@ package com.fluffybacon.merchantvillager.registry;
 
 import com.fluffybacon.merchantvillager.MerchantVillagerMod;
 import com.fluffybacon.merchantvillager.screen.MerchantPostScreenHandler;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
-import net.minecraft.resource.featuretoggle.FeatureFlags;
-import net.minecraft.screen.ScreenHandlerType;
+import net.minecraft.util.math.BlockPos;
 
 public final class ModScreenHandlers {
-    public static final ScreenHandlerType<MerchantPostScreenHandler> MERCHANT_POST = Registry.register(
-        Registries.SCREEN_HANDLER,
-        MerchantVillagerMod.id("merchant_post"),
-        new ScreenHandlerType<>(MerchantPostScreenHandler::new, FeatureFlags.VANILLA_FEATURES)
-    );
+    public static final ExtendedScreenHandlerType<MerchantPostScreenHandler, BlockPos> MERCHANT_POST =
+        Registry.register(
+            Registries.SCREEN_HANDLER,
+            MerchantVillagerMod.id("merchant_post"),
+            new ExtendedScreenHandlerType<>(MerchantPostScreenHandler::new, BlockPos.PACKET_CODEC)
+        );
 
     public static void initialize() {
     }

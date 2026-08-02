@@ -23,3 +23,27 @@ jobs:
 
       - name: Verify mod and gameplay loop
         run: ./gradlew build runGametest --no-daemon --stacktrace
+
+  client-gui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Verify the real Merchant Post client screen
+        run: xvfb-run -a ./gradlew runClientGameTest --no-daemon --stacktrace
+
+      - name: Upload client test screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merchant-post-client-screenshot
+          path: build/run/clientGameTest/screenshots
+          if-no-files-found: warn

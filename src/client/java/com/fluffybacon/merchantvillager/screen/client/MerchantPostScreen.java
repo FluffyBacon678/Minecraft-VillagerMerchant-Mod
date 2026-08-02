@@ -22,21 +22,22 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 
 public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHandler> {
-    private static final int SCREEN_WIDTH = 414;
+    private static final int SCREEN_WIDTH = 320;
     private static final int SCREEN_HEIGHT = 240;
     private static final int TRADE_LEFT = 6;
     private static final int TRADE_TOP = 35;
-    private static final int TRADE_WIDTH = 228;
-    private static final int TRADE_ROW_HEIGHT = 19;
-    private static final int ROWS_PER_PAGE = 7;
-    private static final int INPUT_X = 78;
-    private static final int SECOND_INPUT_X = 103;
-    private static final int OUTPUT_X = 137;
-    private static final int TOGGLE_X = 207;
-    private static final int CARGO_X = 244;
+    private static final int TRADE_WIDTH = 140;
+    private static final int TRADE_ROW_HEIGHT = 28;
+    private static final int ROWS_PER_PAGE = 4;
+    private static final int INPUT_X = 9;
+    private static final int SECOND_INPUT_X = 34;
+    private static final int OUTPUT_X = 68;
+    private static final int TOGGLE_X = 118;
+    private static final int CARGO_X = MerchantPostScreenHandler.STORAGE_X;
     private static final int CARGO_Y = 91;
     private int page;
     private int filterIndex;
@@ -44,6 +45,9 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private TextFieldWidget search;
     private ButtonWidget filterButton;
     private ButtonWidget sortButton;
+    private ButtonWidget previousPageButton;
+    private ButtonWidget nextPageButton;
+    private boolean sessionStarted;
 
     public MerchantPostScreen(
         MerchantPostScreenHandler handler, PlayerInventory inventory, Text title
@@ -60,11 +64,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     @Override
     protected void init() {
         super.init();
+        if (!sessionStarted) {
+            ClientCatalogueCache.beginSession(handler.getPostPos());
+            sessionStarted = true;
+        }
         search = new TextFieldWidget(
             textRenderer,
-            x + 96,
+            x + 100,
             y + 3,
-            70,
+            52,
             18,
             Text.translatable("merchant_villager.search")
         );
@@ -79,14 +87,14 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             filterIndex = Math.floorMod(filterIndex + 1, count);
             page = 0;
             updateControlLabels(payload);
-        }).dimensions(x + 168, y + 3, 42, 18)
+        }).dimensions(x + 154, y + 3, 36, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.filter")))
             .build());
         sortButton = addDrawableChild(ButtonWidget.builder(Text.literal(sortMode.label), button -> {
             sortMode = sortMode.next();
             page = 0;
             updateControlLabels(catalogue());
-        }).dimensions(x + 212, y + 3, 42, 18)
+        }).dimensions(x + 192, y + 3, 36, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.sort")))
             .build());
         addDrawableChild(ButtonWidget.builder(Text.literal("X All"), button -> {
@@ -94,7 +102,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             if (payload != null) {
                 ClientPlayNetworking.send(new DisableAllOffersPayload(payload.postPos()));
             }
-        }).dimensions(x + 256, y + 3, 62, 18)
+        }).dimensions(x + 230, y + 3, 52, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.disable_all")))
             .build());
         addDrawableChild(ButtonWidget.builder(Text.literal("\u21bb"), button -> {
@@ -102,18 +110,26 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             if (payload != null) {
                 ClientPlayNetworking.send(new RefreshCataloguePayload(payload.postPos()));
             }
-        }).dimensions(x + 320, y + 3, 36, 18)
+        }).dimensions(x + 284, y + 3, 34, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.refresh")))
             .build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("<"), button -> page = Math.max(0, page - 1))
-            .dimensions(x + 184, y + 171, 20, 18).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
+        previousPageButton = addDrawableChild(ButtonWidget.builder(
+            Text.literal("<"), button -> page = Math.max(0, page - 1)
+        ).dimensions(x + 102, y + 151, 20, 18).build());
+        nextPageButton = addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
             CataloguePayload payload = catalogue();
             int pages = payload == null
                 ? 1
                 : Math.max(1, (visibleEntries(payload).size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
             page = Math.min(pages - 1, page + 1);
-        }).dimensions(x + 208, y + 171, 20, 18).build());
+        }).dimensions(x + 126, y + 151, 20, 18).build());
+        updatePageButtons(1);
+    }
+
+    @Override
+    public void removed() {
+        ClientCatalogueCache.endSession(handler.getPostPos());
+        super.removed();
     }
 
     @Override
@@ -129,71 +145,97 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     protected void drawBackground(DrawContext context, float deltaTicks, int mouseX, int mouseY) {
         drawWoodBackground(context);
         drawCompactPanels(context);
-        CataloguePayload payload = catalogue();
-        if (payload == null) {
-            context.drawText(
-                textRenderer,
-                Text.translatable("merchant_villager.loading_catalogue"),
-                x + 8,
-                y + TRADE_TOP,
-                0x403020,
-                false
-            );
-            return;
-        }
-        updateControlLabels(payload);
         context.drawText(
             textRenderer,
             Text.translatable("merchant_villager.trades"),
             x + 8,
             y + 24,
-            0x403020,
+            0xFF403020,
             false
         );
+        CataloguePayload payload = catalogue();
+        if (payload == null) {
+            updatePageButtons(1);
+            context.drawText(
+                textRenderer,
+                Text.translatable("merchant_villager.loading_catalogue"),
+                x + 8,
+                y + TRADE_TOP,
+                0xFF403020,
+                false
+            );
+            return;
+        }
+        updateControlLabels(payload);
         List<CataloguePayload.Entry> entries = visibleEntries(payload);
         int pages = Math.max(1, (entries.size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
         page = Math.min(page, pages - 1);
+        updatePageButtons(pages);
         int start = page * ROWS_PER_PAGE;
         for (int row = 0; row < ROWS_PER_PAGE && start + row < entries.size(); row++) {
             drawOfferRow(context, payload, entries.get(start + row), row, mouseX, mouseY);
+        }
+        if (entries.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                textRenderer,
+                Text.literal("No matching trades"),
+                x + TRADE_LEFT + TRADE_WIDTH / 2,
+                y + 82,
+                0xFF6A5540
+            );
         }
         context.drawText(
             textRenderer,
             Text.literal((page + 1) + "/" + pages + "  " + entries.size() + "/" + payload.entries().size()),
             x + 8,
-            y + 177,
-            0x403020,
+            y + 156,
+            0xFF403020,
             false
         );
+        drawStatusFooter(context, payload);
+        drawTelemetryPanel(context, payload);
+    }
+
+    private void drawStatusFooter(DrawContext context, CataloguePayload payload) {
         context.drawText(
             textRenderer,
-            shortText(payload.workerState() + " \u2014 " + payload.status(), 31),
+            fitText(payload.workerState() + " \u2014 " + payload.status(), 132),
             x + 8,
-            y + 194,
-            0x403020,
+            y + 177,
+            0xFF403020,
             false
         );
         context.drawText(
             textRenderer,
             Text.literal(
-                payload.targetCount() + " targets  "
-                    + payload.enabledCount() + " enabled  "
+                payload.targetCount() + "T  "
+                    + payload.enabledCount() + " on  "
                     + payload.executableCount() + " ready"
             ),
             x + 8,
-            y + 206,
-            0x403020,
+            y + 189,
+            0xFF403020,
             false
         );
-        drawTelemetryPanel(context, payload);
+        if (payload.lastFailure().isBlank()) {
+            return;
+        }
+        List<net.minecraft.text.OrderedText> lines = textRenderer.wrapLines(
+            Text.literal("! " + payload.lastFailure()).formatted(Formatting.DARK_RED),
+            132
+        );
+        for (int index = 0; index < Math.min(3, lines.size()); index++) {
+            context.drawText(textRenderer, lines.get(index), x + 8, y + 202 + index * 10, 0xFF8A2020, false);
+        }
     }
 
     private void drawCompactPanels(DrawContext context) {
-        drawPanel(context, x + 5, y + 22, x + 235, y + 171, 0xE8D9B67A);
-        drawPanel(context, x + 239, y + 22, x + 411, y + 89, 0xE06A4729);
-        drawPanel(context, x + 239, y + 90, x + 301, y + 144, 0xE06A4729);
-        drawPanel(context, x + 302, y + 90, x + 411, y + 144, 0xE8D9B67A);
-        drawPanel(context, x + 239, y + 145, x + 411, y + 236, 0xE06A4729);
+        drawPanel(context, x + 5, y + 22, x + 147, y + 149, 0xE8D9B67A);
+        drawPanel(context, x + 5, y + 171, x + 147, y + 237, 0xE8D9B67A);
+        drawPanel(context, x + 149, y + 22, x + 317, y + 89, 0xE06A4729);
+        drawPanel(context, x + 149, y + 90, x + 211, y + 144, 0xE06A4729);
+        drawPanel(context, x + 212, y + 90, x + 317, y + 144, 0xE8D9B67A);
+        drawPanel(context, x + 149, y + 145, x + 317, y + 236, 0xE06A4729);
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++) {
                 drawSlotFrame(
@@ -225,15 +267,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             Text.translatable("merchant_villager.backpack"),
             x + MerchantPostScreenHandler.STORAGE_X,
             y + 24,
-            0xFFF2D0,
+            0xFFFFF2D0,
             true
         );
         context.drawText(
             textRenderer,
             Text.translatable("merchant_villager.in_transit"),
-            x + 305,
+            x + 215,
             y + 94,
-            0xFFF2D0,
+            0xFFFFF2D0,
             true
         );
     }
@@ -257,8 +299,8 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     }
 
     private void drawTelemetryPanel(DrawContext context, CataloguePayload payload) {
-        int left = x + 305;
-        int color = 0x403020;
+        int left = x + 215;
+        int color = 0xFF403020;
         if (payload.workerStats().isEmpty()) {
             context.drawText(
                 textRenderer,
@@ -279,7 +321,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             return;
         }
         CataloguePayload.WorkerStats stats = payload.workerStats().get();
-        context.drawText(textRenderer, shortText(stats.name(), 17), left, y + 105, color, false);
+        context.drawText(textRenderer, fitText(stats.name(), 98), left, y + 105, color, false);
         context.drawText(
             textRenderer,
             Text.literal("HP " + formatOne(stats.health()) + "/" + formatOne(stats.maxHealth())),
@@ -290,31 +332,13 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         );
         context.drawText(
             textRenderer,
-            Text.literal("Range " + formatDistance(stats.distanceSquared()) + "m"),
+            Text.literal("Trip " + stats.completedExecutions() + "/" + stats.plannedExecutions()),
             left,
             y + 127,
             color,
             false
         );
-        context.drawText(
-            textRenderer,
-            Text.literal("Trip " + stats.completedExecutions() + "/" + stats.plannedExecutions()),
-            left,
-            y + 138,
-            color,
-            false
-        );
         drawCargo(context, stats.cargo());
-        if (!payload.lastFailure().isBlank()) {
-            context.drawText(
-                textRenderer,
-                shortText("! " + payload.lastFailure(), 35),
-                x + 8,
-                y + 219,
-                0x8A2020,
-                false
-            );
-        }
     }
 
     private void drawCargo(DrawContext context, List<ItemStack> cargo) {
@@ -339,13 +363,20 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
 
     @Override
     protected void drawForeground(DrawContext context, int mouseX, int mouseY) {
-        context.drawText(textRenderer, title, titleX, titleY, 0x403020, false);
+        context.drawText(
+            textRenderer,
+            fitText(title.getString(), 90),
+            titleX,
+            titleY,
+            0xFFFFF2D0,
+            true
+        );
         context.drawText(
             textRenderer,
             playerInventoryTitle,
             playerInventoryTitleX,
             playerInventoryTitleY,
-            0xFFF2D0,
+            0xFFFFF2D0,
             true
         );
     }
@@ -374,17 +405,18 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             x + TRADE_LEFT,
             rowY - 2,
             x + TRADE_LEFT + TRADE_WIDTH,
-            rowY + 17,
+            rowY + TRADE_ROW_HEIGHT - 2,
             background
         );
-        String target = shortText(targetDisplayLabel(payload, entry), 10);
-        context.drawText(textRenderer, target, x + 9, rowY + 3, 0xFFF2D0, true);
+        String target = fitText(targetDisplayLabel(payload, entry), TOGGLE_X - 13);
+        context.drawText(textRenderer, target, x + 9, rowY, 0xFFFFF2D0, true);
         int itemX = x + INPUT_X;
+        int itemY = rowY + 9;
         ItemStack first = entry.offer().firstInput().itemStack()
             .copyWithCount(entry.effectiveFirstCount());
-        drawGhostInput(context, first, entry.offer().firstInput().matches(handler.getCursorStack()), itemX, rowY);
+        drawGhostInput(context, first, entry.offer().firstInput().matches(handler.getCursorStack()), itemX, itemY);
         if (entry.offer().secondInput().isPresent()) {
-            context.drawText(textRenderer, "+", itemX + 17, rowY + 4, 0xFFF2D0, true);
+            context.drawText(textRenderer, "+", itemX + 17, itemY + 4, 0xFFFFF2D0, true);
             ItemStack second = entry.offer().secondInput().get().itemStack()
                 .copyWithCount(entry.effectiveSecondCount());
             drawGhostInput(
@@ -392,51 +424,57 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 second,
                 entry.offer().secondInput().get().matches(handler.getCursorStack()),
                 x + SECOND_INPUT_X,
-                rowY
+                itemY
             );
         }
-        context.drawText(textRenderer, "\u2192", x + 124, rowY + 4, 0xFFF2D0, true);
-        context.drawItem(entry.offer().output(), x + OUTPUT_X, rowY - 1);
-        context.drawStackOverlay(textRenderer, entry.offer().output(), x + OUTPUT_X, rowY - 1);
-        String availability = availability(entry);
-        context.drawText(textRenderer, shortText(availability, 8), x + 157, rowY + 4, 0xFFF2D0, true);
+        context.drawText(textRenderer, "\u2192", x + 56, itemY + 4, 0xFFFFF2D0, true);
+        context.drawItem(entry.offer().output(), x + OUTPUT_X, itemY - 1);
+        context.drawStackOverlay(textRenderer, entry.offer().output(), x + OUTPUT_X, itemY - 1);
+        context.drawText(
+            textRenderer,
+            compactAvailability(entry),
+            x + 87,
+            itemY + 4,
+            0xFFFFF2D0,
+            true
+        );
         if (!entry.enabled()) {
             context.fill(
                 x + TRADE_LEFT,
                 rowY - 2,
                 x + TRADE_LEFT + TRADE_WIDTH,
-                rowY + 17,
-                0x880F1112
+                rowY + TRADE_ROW_HEIGHT - 2,
+                0x99606060
             );
         }
         context.fill(
             x + TOGGLE_X,
             rowY - 1,
-            x + TOGGLE_X + 24,
-            rowY + 16,
+            x + TOGGLE_X + 26,
+            rowY + TRADE_ROW_HEIGHT - 3,
             entry.enabled() ? 0xFF356A3A : 0xFF555555
         );
         context.drawCenteredTextWithShadow(
             textRenderer,
             entry.enabled() ? "ON" : "X",
-            x + TOGGLE_X + 12,
-            rowY + 4,
-            0xFFFFFF
+            x + TOGGLE_X + 13,
+            rowY + 8,
+            0xFFFFFFFF
         );
     }
 
     private void drawGhostInput(
-        DrawContext context, ItemStack stack, boolean cursorMatches, int itemX, int rowY
+        DrawContext context, ItemStack stack, boolean cursorMatches, int itemX, int itemY
     ) {
         if (!handler.getCursorStack().isEmpty()) {
             int color = cursorMatches ? 0xFF5ABF63 : 0xFFB44242;
-            context.fill(itemX - 1, rowY - 2, itemX + 17, rowY - 1, color);
-            context.fill(itemX - 1, rowY + 15, itemX + 17, rowY + 16, color);
-            context.fill(itemX - 1, rowY - 1, itemX, rowY + 15, color);
-            context.fill(itemX + 16, rowY - 1, itemX + 17, rowY + 15, color);
+            context.fill(itemX - 1, itemY - 2, itemX + 17, itemY - 1, color);
+            context.fill(itemX - 1, itemY + 15, itemX + 17, itemY + 16, color);
+            context.fill(itemX - 1, itemY - 1, itemX, itemY + 15, color);
+            context.fill(itemX + 16, itemY - 1, itemX + 17, itemY + 15, color);
         }
-        context.drawItem(stack, itemX, rowY - 1);
-        context.drawStackOverlay(textRenderer, stack, itemX, rowY - 1);
+        context.drawItem(stack, itemX, itemY - 1);
+        context.drawStackOverlay(textRenderer, stack, itemX, itemY - 1);
     }
 
     @Override
@@ -451,12 +489,13 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 int rowY = y + TRADE_TOP + row * TRADE_ROW_HEIGHT;
                 CataloguePayload.Entry entry = entries.get(start + row);
                 int itemX = x + INPUT_X;
-                if (inside(mouseX, mouseY, itemX, rowY - 1, 16, 16)) {
+                int itemY = rowY + 8;
+                if (inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
                     sendDeposit(payload, entry, 0, click);
                     return true;
                 }
                 if (entry.offer().secondInput().isPresent()
-                    && inside(mouseX, mouseY, x + SECOND_INPUT_X, rowY - 1, 16, 16)) {
+                    && inside(mouseX, mouseY, x + SECOND_INPUT_X, itemY, 16, 16)) {
                     sendDeposit(payload, entry, 1, click);
                     return true;
                 }
@@ -510,7 +549,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     ) {
         CataloguePayload payload = catalogue();
         if (payload != null
-            && inside(mouseX, mouseY, x + TRADE_LEFT, y + TRADE_TOP - 2, TRADE_WIDTH, 135)) {
+            && verticalAmount != 0.0
+            && inside(
+                mouseX,
+                mouseY,
+                x + TRADE_LEFT,
+                y + TRADE_TOP - 2,
+                TRADE_WIDTH,
+                ROWS_PER_PAGE * TRADE_ROW_HEIGHT
+            )) {
             int pages = Math.max(1, (visibleEntries(payload).size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
             page = Math.max(0, Math.min(pages - 1, page + (verticalAmount < 0 ? 1 : -1)));
             return true;
@@ -529,14 +576,22 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             CataloguePayload.Entry entry = entries.get(start + row);
             int rowY = y + TRADE_TOP + row * TRADE_ROW_HEIGHT;
             int itemX = x + INPUT_X;
-            if (inside(mouseX, mouseY, itemX, rowY - 1, 16, 16)) {
+            int itemY = rowY + 8;
+            if (inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
                 context.drawItemTooltip(textRenderer, entry.offer().firstInput().itemStack(), mouseX, mouseY);
             } else if (entry.offer().secondInput().isPresent()
-                && inside(mouseX, mouseY, x + SECOND_INPUT_X, rowY - 1, 16, 16)) {
+                && inside(mouseX, mouseY, x + SECOND_INPUT_X, itemY, 16, 16)) {
                 context.drawItemTooltip(textRenderer, entry.offer().secondInput().get().itemStack(), mouseX, mouseY);
-            } else if (inside(mouseX, mouseY, x + OUTPUT_X, rowY - 1, 16, 16)) {
+            } else if (inside(mouseX, mouseY, x + OUTPUT_X, itemY, 16, 16)) {
                 context.drawItemTooltip(textRenderer, entry.offer().output(), mouseX, mouseY);
-            } else if (inside(mouseX, mouseY, x + TOGGLE_X, rowY - 1, 24, 17)) {
+            } else if (inside(
+                mouseX,
+                mouseY,
+                x + TOGGLE_X,
+                rowY - 1,
+                26,
+                TRADE_ROW_HEIGHT - 2
+            )) {
                 context.drawTooltip(
                     textRenderer,
                     Text.translatable(entry.enabled()
@@ -557,6 +612,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 details.add(Text.literal(entry.offer().targetName()));
                 details.add(Text.literal("Distance: " + formatDistance(entry.offer().distanceSquared()) + " blocks"));
                 details.add(Text.literal("Uses: " + entry.offer().uses() + "/" + entry.offer().maxUses()));
+                details.add(Text.literal("Status: " + availability(entry)));
                 details.add(Text.literal(
                     "Stored: " + entry.storedFirstCount()
                         + (entry.offer().secondInput().isPresent()
@@ -606,40 +662,58 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
 
     private void renderStatusTooltip(DrawContext context, int mouseX, int mouseY) {
         CataloguePayload payload = catalogue();
-        if (payload == null || !inside(mouseX, mouseY, x + 6, y + 191, 226, 40)) {
+        if (payload == null || !inside(mouseX, mouseY, x + 6, y + 171, 140, 66)) {
             return;
         }
-        List<Text> lines = new ArrayList<>();
-        lines.add(Text.literal(payload.status()));
+        List<net.minecraft.text.OrderedText> lines = new ArrayList<>();
+        addWrappedTooltipLine(lines, Text.literal(payload.status()));
         payload.workerStats().ifPresent(stats -> {
-            lines.add(Text.literal(
+            addWrappedTooltipLine(lines, Text.literal(
                 stats.name() + "  " + formatOne(stats.health()) + "/" + formatOne(stats.maxHealth()) + " health"
             ));
-            lines.add(Text.literal("Distance from post: " + formatDistance(stats.distanceSquared()) + " blocks"));
-            lines.add(Text.literal(
+            addWrappedTooltipLine(
+                lines,
+                Text.literal("Distance from post: " + formatDistance(stats.distanceSquared()) + " blocks")
+            );
+            addWrappedTooltipLine(lines, Text.literal(
                 "Work order: " + stats.completedExecutions() + "/" + stats.plannedExecutions()
             ));
-            lines.add(Text.literal(
+            addWrappedTooltipLine(lines, Text.literal(
                 "Target: " + stats.targetUuid()
                     .map(uuid -> targetName(payload, uuid))
                     .orElse("none")
             ));
-            lines.add(Text.literal(
+            addWrappedTooltipLine(lines, Text.literal(
                 "Output chest: " + stats.outputChest()
                     .map(pos -> pos.toShortString() + " \u2014 " + stats.outputChestStatus())
                     .orElse("not selected")
             ));
-            String cargo = stats.cargo().stream()
-                .filter(stack -> !stack.isEmpty())
-                .map(stack -> stack.getCount() + " " + stack.getName().getString())
-                .reduce((left, right) -> left + ", " + right)
-                .orElse("empty");
-            lines.add(Text.literal("Cargo: " + cargo));
+            List<ItemStack> cargo = stats.cargo().stream().filter(stack -> !stack.isEmpty()).toList();
+            if (cargo.isEmpty()) {
+                addWrappedTooltipLine(lines, Text.literal("Cargo: empty"));
+            } else {
+                addWrappedTooltipLine(lines, Text.literal("Cargo:"));
+                for (ItemStack stack : cargo) {
+                    addWrappedTooltipLine(
+                        lines,
+                        Text.literal("  " + stack.getCount() + " " + stack.getName().getString())
+                    );
+                }
+            }
         });
         if (!payload.lastFailure().isBlank()) {
-            lines.add(Text.literal("Last failure: " + payload.lastFailure()));
+            addWrappedTooltipLine(
+                lines,
+                Text.literal("Last failure: " + payload.lastFailure()).formatted(Formatting.RED)
+            );
         }
-        context.drawTooltip(textRenderer, lines, mouseX, mouseY);
+        context.drawOrderedTooltip(textRenderer, lines, mouseX, mouseY);
+    }
+
+    private void addWrappedTooltipLine(
+        List<net.minecraft.text.OrderedText> lines, Text line
+    ) {
+        lines.addAll(textRenderer.wrapLines(line, Math.max(160, Math.min(260, width - 24))));
     }
 
     private CataloguePayload catalogue() {
@@ -689,6 +763,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }
         if (sortButton != null) {
             sortButton.setMessage(Text.literal(sortMode.label));
+        }
+    }
+
+    private void updatePageButtons(int pages) {
+        if (previousPageButton != null) {
+            previousPageButton.active = page > 0;
+        }
+        if (nextPageButton != null) {
+            nextPageButton.active = page + 1 < pages;
         }
     }
 
@@ -757,6 +840,22 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         return entry.fundableExecutions() > 0 ? "Ready " + entry.fundableExecutions() : "Missing";
     }
 
+    private static String compactAvailability(CataloguePayload.Entry entry) {
+        if (entry.offer().isOutOfStock()) {
+            return "Out";
+        }
+        if (!entry.offer().targetAvailable()) {
+            return "Busy";
+        }
+        if (entry.coolingDown()) {
+            return "Path";
+        }
+        if (!entry.enabled()) {
+            return "Off";
+        }
+        return entry.fundableExecutions() > 0 ? "×" + entry.fundableExecutions() : "Miss";
+    }
+
     private static String targetName(CataloguePayload payload, java.util.UUID targetUuid) {
         return payload.entries().stream()
             .filter(entry -> entry.offer().targetUuid().equals(targetUuid))
@@ -800,6 +899,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
 
     private static String shortText(String text, int max) {
         return text.length() <= max ? text : text.substring(0, Math.max(0, max - 1)) + "\u2026";
+    }
+
+    private String fitText(String text, int maxWidth) {
+        if (textRenderer.getWidth(text) <= maxWidth) {
+            return text;
+        }
+        String ellipsis = "\u2026";
+        int contentWidth = Math.max(0, maxWidth - textRenderer.getWidth(ellipsis));
+        return textRenderer.trimToWidth(text, contentWidth) + ellipsis;
     }
 
     private static String formatDistance(double squared) {

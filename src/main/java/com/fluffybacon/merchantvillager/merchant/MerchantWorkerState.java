@@ -95,6 +95,21 @@ public final class MerchantWorkerState {
         return postPos != null && postDimension.equals(world.getRegistryKey().getValue().toString());
     }
 
+    /**
+     * Clears a stale worker/post relationship after the villager no longer
+     * owns a valid Merchant job site. Cargo recovery deliberately happens
+     * before this method is called, so no physical items are discarded here.
+     */
+    public void clearPostAssignment(String status) {
+        postPos = null;
+        postDimension = "";
+        postDestroyed = false;
+        outputChest = null;
+        reservationExpiry = 0L;
+        clearTarget();
+        enter(MerchantState.IDLE, status);
+    }
+
     public void onPostDestroyed(BlockPos formerPos) {
         postPos = formerPos.toImmutable();
         postDestroyed = true;

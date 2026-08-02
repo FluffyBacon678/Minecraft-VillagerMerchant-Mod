@@ -18,6 +18,7 @@ import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.village.TradeOffer;
 
 public final class ModPayloads {
@@ -148,7 +149,7 @@ public final class ModPayloads {
         if (workerState != null && workerEntity != null && player.getEntityWorld() instanceof ServerWorld world) {
             List<ItemStack> cargo = workerState.copyCargo().stream().map(ItemStack::copy).toList();
             Optional<net.minecraft.util.math.BlockPos> chest = Optional.ofNullable(workerState.outputChest());
-            String chestStatus = outputChestStatus(world, workerState);
+            String chestStatus = outputChestStatus(world, post.getPos(), workerState);
             stats = Optional.of(new CataloguePayload.WorkerStats(
                 workerEntity.getDisplayName().getString(),
                 workerEntity.getHealth(),
@@ -179,11 +180,17 @@ public final class ModPayloads {
         ServerPlayNetworking.send(player, payload);
     }
 
-    private static String outputChestStatus(ServerWorld world, MerchantWorkerState state) {
+    private static String outputChestStatus(
+        ServerWorld world, BlockPos postPos, MerchantWorkerState state
+    ) {
         if (state.outputChest() == null) {
             return "Not selected";
         }
-        Inventory inventory = OutputChestFinder.chestInventory(world, state.outputChest());
+        Inventory inventory = OutputChestFinder.touchingChestInventory(
+            world,
+            postPos,
+            state.outputChest()
+        );
         if (inventory == null) {
             return "Unavailable";
         }

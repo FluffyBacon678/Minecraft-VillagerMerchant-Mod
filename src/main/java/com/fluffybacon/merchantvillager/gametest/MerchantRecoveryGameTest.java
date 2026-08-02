@@ -4,6 +4,7 @@ import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.merchant.MerchantState;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
+import com.fluffybacon.merchantvillager.merchant.ReservationManager;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import com.fluffybacon.merchantvillager.registry.ModPointOfInterests;
 import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
@@ -13,6 +14,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.ChestBlockEntity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.brain.Activity;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
@@ -20,6 +22,7 @@ import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.world.Difficulty;
 import net.minecraft.server.world.ChunkTicketType;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
@@ -74,6 +77,98 @@ public final class MerchantRecoveryGameTest {
             context.assertEquals(2, droppedCount(context, deathPos, Items.EMERALD), "Death drops exact rewards once");
             context.assertTrue(post.getAssignedMerchant().isEmpty(), "Death clears the post assignment");
             context.assertFalse(state.hasCargo(), "Dropped death cargo must be cleared from persisted state");
+            context.complete();
+        });
+    }
+
+    @GameTest(maxTicks = 20)
+    public void lightningConversionDropsCargoAndReleasesPostExactlyOnce(TestContext context) {
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        context.setBlockState(postPos.down(), Blocks.STONE);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(2, 1, 1));
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        state.bindPost(context.getWorld(), context.getAbsolutePos(postPos));
+        context.assertTrue(
+            state.loadInputs(java.util.List.of(new ItemStack(Items.PAPER, 3))),
+            "Lightning regression must start with exact input cargo"
+        );
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        java.util.UUID target = java.util.UUID.randomUUID();
+        String fingerprint = "a".repeat(64);
+        context.assertTrue(
+            ReservationManager.reserve(
+                context.getWorld().getServer(),
+                worker.getUuid(),
+                target,
+                fingerprint,
+                1,
+                context.getWorld().getTime()
+            ),
+            "Lightning regression must own one live reservation"
+        );
+        BlockPos conversionPos = worker.getBlockPos();
+        LightningEntity lightning = new LightningEntity(EntityType.LIGHTNING_BOLT, context.getWorld());
+        lightning.setPosition(worker.getEntityPos());
+        Difficulty previousDifficulty = context.getWorld().getDifficulty();
+        context.getWorld().getServer().setDifficulty(Difficulty.NORMAL, true);
+        worker.onStruckByLightning(context.getWorld(), lightning);
+        context.getWorld().getServer().setDifficulty(previousDifficulty, true);
+
+        context.runAtTick(2, () -> {
+            context.assertTrue(worker.isRemoved(), "Successful lightning conversion must discard the villager");
+            context.assertFalse(state.hasCargo(), "Dropped conversion cargo must be cleared");
+            context.assertTrue(post.getAssignedMerchant().isEmpty(), "Conversion must clear the post assignment");
+            context.assertEquals(
+                0,
+                ReservationManager.countWorker(
+                    context.getWorld().getServer(), worker.getUuid(), context.getWorld().getTime()
+                ),
+                "Conversion must release every worker reservation"
+            );
+            context.assertEquals(
+                3,
+                droppedCount(context, conversionPos, Items.PAPER),
+                "Lightning conversion must drop exact cargo once"
+            );
+            context.complete();
+        });
+    }
+
+    @GameTest(maxTicks = 260)
+    public void unreachableDestroyedPostDropsCargoAfterRecoveryTimeout(TestContext context) {
+        BlockPos workerPos = new BlockPos(2, 1, 2);
+        context.setBlockState(workerPos.down(), Blocks.STONE);
+        for (int offset = -1; offset <= 1; offset++) {
+            if (offset != 0) {
+                context.setBlockState(workerPos.add(offset, 0, 0), Blocks.BEDROCK);
+                context.setBlockState(workerPos.add(offset, 1, 0), Blocks.BEDROCK);
+                context.setBlockState(workerPos.add(0, 0, offset), Blocks.BEDROCK);
+                context.setBlockState(workerPos.add(0, 1, offset), Blocks.BEDROCK);
+            }
+        }
+        VillagerEntity worker = spawnVillager(context, workerPos);
+        worker.setInvulnerable(true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        BlockPos unreachableFormerPost = context.getAbsolutePos(new BlockPos(20, 1, 2));
+        state.bindPost(context.getWorld(), unreachableFormerPost);
+        context.assertTrue(
+            state.loadInputs(java.util.List.of(new ItemStack(Items.PAPER, 5))),
+            "Unreachable-post regression must begin with exact cargo"
+        );
+        state.onPostDestroyed(unreachableFormerPost);
+
+        context.runAtTick(230, () -> {
+            context.assertFalse(
+                state.hasCargo(),
+                "Recovery must not carry cargo forever when the former post is unreachable"
+            );
+            context.assertEquals(
+                5,
+                droppedCount(context, worker.getBlockPos(), Items.PAPER),
+                "Timed-out recovery must drop the exact cargo once at the worker"
+            );
             context.complete();
         });
     }

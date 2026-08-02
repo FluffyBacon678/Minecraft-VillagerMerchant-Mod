@@ -667,6 +667,60 @@ public final class MerchantTradingGameTest {
         context.complete();
     }
 
+    @GameTest
+    public void tradeExecutorRejectsExecutionThroughSolidWall(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(new BlockPos(2, 1, 2), Blocks.STONE);
+        context.setBlockState(new BlockPos(2, 2, 2), Blocks.STONE);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(3, 1, 2));
+        worker.setAiDisabled(true);
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(
+            new TradedItem(Items.PAPER, 1),
+            Optional.empty(),
+            new ItemStack(Items.EMERALD),
+            8,
+            1,
+            0.05F
+        );
+        target.getOffers().add(offer);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.refreshCatalogue(true);
+        var snapshot = post.getOffers().stream()
+            .filter(candidate -> candidate.targetUuid().equals(target.getUuid()))
+            .findFirst()
+            .orElseThrow();
+        post.setOfferEnabledInternal(snapshot.fingerprint(), true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        state.target(target.getUuid(), snapshot.offerIndex(), snapshot.fingerprint());
+        state.plannedExecutions(1);
+        context.assertTrue(
+            state.loadInputs(java.util.List.of(new ItemStack(Items.PAPER))),
+            "Wall regression must start with one exact input"
+        );
+        context.assertFalse(
+            MerchantTradeExecutor.hasInteractionLine(worker, target),
+            "The solid wall must block every valid entity interaction ray"
+        );
+
+        boolean executed = MerchantTradeExecutor.executeOne(
+            context.getWorld(),
+            worker,
+            target,
+            state,
+            post
+        );
+        context.assertFalse(executed, "Interaction distance alone must not permit trading through a wall");
+        context.assertEquals(0, offer.getUses(), "Wall-blocked execution must not increment offer uses");
+        context.assertTrue(state.hasInputs(), "Wall-blocked execution must preserve input cargo");
+        context.assertFalse(state.hasRewards(), "Wall-blocked execution must create no reward");
+        context.complete();
+    }
+
     @GameTest(maxTicks = 250, skyAccess = true)
     public void stationaryExtendedTargetIsRejectedWithoutReservingInputs(TestContext context) {
         int y = 90;

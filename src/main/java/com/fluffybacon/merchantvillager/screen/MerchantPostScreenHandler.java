@@ -13,15 +13,17 @@ import net.minecraft.util.math.BlockPos;
 
 public final class MerchantPostScreenHandler extends ScreenHandler {
     private static final int POST_SLOT_COUNT = 27;
-    public static final int STORAGE_X = 244;
+    public static final int STORAGE_X = 153;
     public static final int STORAGE_Y = 34;
     public static final int PLAYER_INVENTORY_Y = 158;
     public static final int HOTBAR_Y = 216;
     private final Inventory postInventory;
     private final BlockPos postPos;
 
-    public MerchantPostScreenHandler(int syncId, PlayerInventory playerInventory) {
-        this(syncId, playerInventory, new SimpleInventory(POST_SLOT_COUNT), BlockPos.ORIGIN);
+    public MerchantPostScreenHandler(
+        int syncId, PlayerInventory playerInventory, BlockPos postPos
+    ) {
+        this(syncId, playerInventory, new SimpleInventory(POST_SLOT_COUNT), postPos);
     }
 
     public MerchantPostScreenHandler(int syncId, PlayerInventory playerInventory, MerchantPostBlockEntity post) {
