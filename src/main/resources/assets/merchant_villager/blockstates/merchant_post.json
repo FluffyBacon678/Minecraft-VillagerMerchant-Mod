@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "merchant_villager:block/merchant_post"
+    }
+  }
+}

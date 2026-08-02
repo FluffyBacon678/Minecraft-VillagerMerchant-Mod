@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.fluffybacon.merchantvillager.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "VillagerEntityMixin",
+    "ZombieEntityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

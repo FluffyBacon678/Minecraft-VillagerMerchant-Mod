@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "minecraft:barrel",
+    "minecraft:bell",
+    "minecraft:emerald"
+  ],
+  "result": {
+    "count": 1,
+    "id": "merchant_villager:merchant_post"
+  }
+}

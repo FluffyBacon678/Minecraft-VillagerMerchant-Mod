@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "merchant_villager:block/merchant_post"
+  }
+}

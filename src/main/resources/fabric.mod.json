@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "merchant_villager",
+  "version": "${version}",
+  "name": "Merchant Villager",
+  "description": "A physical villager worker that performs approved real merchant trades and delivers rewards.",
+  "authors": ["FluffyBacon"],
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.fluffybacon.merchantvillager.MerchantVillagerMod"
+    ],
+    "client": [
+      "com.fluffybacon.merchantvillager.client.MerchantVillagerClient"
+    ],
+    "fabric-gametest": [
+      "com.fluffybacon.merchantvillager.gametest.MerchantPostGameTests",
+      "com.fluffybacon.merchantvillager.gametest.MerchantProfessionGameTest",
+      "com.fluffybacon.merchantvillager.gametest.MerchantTradingGameTest",
+      "com.fluffybacon.merchantvillager.gametest.MerchantRecoveryGameTest"
+    ],
+    "fabric-datagen": [
+      "com.fluffybacon.merchantvillager.datagen.MerchantVillagerDataGenerator"
+    ]
+  },
+  "mixins": [
+    "merchant_villager.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": ">=0.141.6+1.21.11"
+  }
+}
