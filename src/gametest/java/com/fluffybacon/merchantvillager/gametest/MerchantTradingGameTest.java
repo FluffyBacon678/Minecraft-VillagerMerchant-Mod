@@ -722,7 +722,7 @@ public final class MerchantTradingGameTest {
         context.complete();
     }
 
-    @GameTest(maxTicks = 250, skyAccess = true)
+    @GameTest(maxTicks = 1000, skyAccess = true)
     public void stationaryExtendedTargetIsRejectedWithoutReservingInputs(TestContext context) {
         int y = 90;
         createElevatedFloor(context, y - 1, 66);
@@ -730,18 +730,10 @@ public final class MerchantTradingGameTest {
         BlockPos chestPos = new BlockPos(2, y, 1);
         BlockPos targetPos = new BlockPos(61, y, 2);
         ChunkPos targetChunk = new ChunkPos(context.getAbsolutePos(targetPos));
-        // GameTest structures normally simulate only their compact template
-        // area. Keep the intentionally distant target chunk ticking so this
-        // exercises the 55-to-66 block rule rather than chunk-ticket timing.
-        context.getWorld().getChunkManager().addTicket(
-            ChunkTicketType.DRAGON,
-            targetChunk,
-            5
-        );
-        context.getWorld().getChunk(context.getAbsolutePos(targetPos));
         context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
         context.setBlockState(chestPos, Blocks.CHEST);
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, y, 2));
+        worker.setAiDisabled(true);
         VillagerEntity target = spawnVillager(context, targetPos);
         target.setAiDisabled(true);
         target.getOffers().clear();
@@ -757,43 +749,85 @@ public final class MerchantTradingGameTest {
         prepareWorker(context, worker, postPos);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         post.assignMerchant(worker.getUuid());
+        // GameTests advance logical time much faster than a normal server.
+        // Start loading only after setup is complete, then gate worker AI
+        // until the full route is loaded and entity-ticking.
+        var routeChunksReady = context.getWorld().getChunkManager().addChunkLoadingTicket(
+            ChunkTicketType.DRAGON,
+            targetChunk,
+            5
+        );
         boolean[] configured = {false};
+        long[] routeReadyTick = {-1L};
+        boolean[] completed = {false};
+        boolean[] ticketActive = {true};
+        Runnable removeRouteTicket = () -> {
+            if (ticketActive[0]) {
+                context.getWorld().getChunkManager().removeTicket(
+                    ChunkTicketType.DRAGON,
+                    targetChunk,
+                    5
+                );
+                ticketActive[0] = false;
+            }
+        };
         context.runAtEveryTick(() -> {
-            if (configured[0]) {
+            if (completed[0]) {
                 return;
             }
-            post.refreshCatalogue(true);
-            post.getOffers().stream()
-                .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
-                .findFirst()
-                .ifPresent(snapshot -> {
-                    post.setOfferEnabledInternal(snapshot.fingerprint(), true);
-                    post.setStack(0, new ItemStack(Items.PAPER, 2));
-                    configured[0] = true;
-                });
-        });
-
-        context.runAtTick(180, () -> {
-            context.getWorld().getChunkManager().removeTicket(
-                ChunkTicketType.DRAGON,
-                targetChunk,
-                5
-            );
-            context.assertTrue(
-                configured[0],
-                extendedDiscoveryFailure(context, postPos, target, post)
-            );
-            context.assertEquals(0, offer.getUses(), "Stationary 55-to-66-block target must not be pursued");
-            context.assertEquals(2, post.count(Items.PAPER), "Rejected extended target must reserve no inputs");
-            context.assertFalse(
-                ((MerchantWorker)worker).merchantVillager$getState().hasCargo(),
-                "Rejected convergence must leave worker cargo empty"
-            );
-            context.complete();
+            try {
+                if (routeReadyTick[0] < 0L) {
+                    if (context.getTick() >= 500L) {
+                        completed[0] = true;
+                        removeRouteTicket.run();
+                        context.throwGameTestException(
+                            "Timed out waiting for extended route chunks to become entity-ticking"
+                        );
+                    }
+                    if (!routeChunksReady.isDone()
+                        || !routeChunksAreEntityTicking(context, postPos, targetPos)) {
+                        return;
+                    }
+                    routeChunksReady.join();
+                    worker.setAiDisabled(false);
+                    routeReadyTick[0] = context.getTick();
+                }
+                if (!configured[0]) {
+                    post.refreshCatalogue(true);
+                    post.getOffers().stream()
+                        .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+                        .findFirst()
+                        .ifPresent(snapshot -> {
+                            post.setOfferEnabledInternal(snapshot.fingerprint(), true);
+                            post.setStack(0, new ItemStack(Items.PAPER, 2));
+                            configured[0] = true;
+                        });
+                }
+                if (context.getTick() - routeReadyTick[0] < 180L) {
+                    return;
+                }
+                completed[0] = true;
+                removeRouteTicket.run();
+                context.assertTrue(
+                    configured[0],
+                    extendedDiscoveryFailure(context, postPos, target, post)
+                );
+                context.assertEquals(0, offer.getUses(), "Stationary 55-to-66-block target must not be pursued");
+                context.assertEquals(2, post.count(Items.PAPER), "Rejected extended target must reserve no inputs");
+                context.assertFalse(
+                    ((MerchantWorker)worker).merchantVillager$getState().hasCargo(),
+                    "Rejected convergence must leave worker cargo empty"
+                );
+                context.complete();
+            } catch (RuntimeException | Error failure) {
+                completed[0] = true;
+                removeRouteTicket.run();
+                throw failure;
+            }
         });
     }
 
-    @GameTest(maxTicks = 1400, skyAccess = true)
+    @GameTest(maxTicks = 3000, skyAccess = true)
     public void approachingExtendedTargetCanConvergeAndTradeWithinTether(TestContext context) {
         int y = 60;
         createElevatedFloor(context, y - 1, 66);
@@ -801,15 +835,10 @@ public final class MerchantTradingGameTest {
         BlockPos chestPos = new BlockPos(2, y, 1);
         BlockPos targetPos = new BlockPos(61, y, 2);
         ChunkPos targetChunk = new ChunkPos(context.getAbsolutePos(targetPos));
-        context.getWorld().getChunkManager().addTicket(
-            ChunkTicketType.DRAGON,
-            targetChunk,
-            5
-        );
-        context.getWorld().getChunk(context.getAbsolutePos(targetPos));
         context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
         context.setBlockState(chestPos, Blocks.CHEST);
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, y, 2));
+        worker.setAiDisabled(true);
         VillagerEntity target = spawnVillager(context, targetPos);
         double initialTargetDistance = Math.sqrt(
             target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos())
@@ -833,47 +862,110 @@ public final class MerchantTradingGameTest {
         prepareWorker(context, worker, postPos);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         post.assignMerchant(worker.getUuid());
+        // Load every chunk covered by the simulation ticket asynchronously.
+        // Worker AI is enabled only after setup and entity-ticking readiness,
+        // preventing the accelerated test clock from outrunning activation.
+        var routeChunksReady = context.getWorld().getChunkManager().addChunkLoadingTicket(
+            ChunkTicketType.DRAGON,
+            targetChunk,
+            5
+        );
         boolean[] configured = {false};
         long[] movementStart = {-1L};
         double[] maximumWorkerDistance = {0.0};
+        boolean[] completed = {false};
+        boolean[] routeActivated = {false};
+        boolean[] ticketActive = {true};
+        Runnable removeRouteTicket = () -> {
+            if (ticketActive[0]) {
+                context.getWorld().getChunkManager().removeTicket(
+                    ChunkTicketType.DRAGON,
+                    targetChunk,
+                    5
+                );
+                ticketActive[0] = false;
+            }
+        };
         context.runAtEveryTick(() -> {
-            if (!configured[0]) {
-                post.refreshCatalogue(true);
-                post.getOffers().stream()
-                    .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
-                    .findFirst()
-                    .ifPresent(snapshot -> {
-                        post.setOfferEnabledInternal(snapshot.fingerprint(), true);
-                        post.setStack(0, new ItemStack(Items.PAPER));
-                        configured[0] = true;
-                        movementStart[0] = context.getTick();
-                    });
+            if (completed[0]) {
+                return;
             }
-            maximumWorkerDistance[0] = Math.max(
-                maximumWorkerDistance[0],
-                Math.sqrt(worker.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos()))
-            );
-            if (configured[0] && context.getTick() - movementStart[0] < 55L) {
-                target.setVelocity(-0.12, 0.0, 0.0);
-                target.setPosition(target.getX() - 0.12, target.getY(), target.getZ());
-            } else {
-                target.setVelocity(Vec3d.ZERO);
-            }
-        });
-
-        context.runAtTick(1300, () -> {
-            context.getWorld().getChunkManager().removeTicket(
-                ChunkTicketType.DRAGON,
-                targetChunk,
-                5
-            );
-            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
-            String diagnostics = " (state=" + state.state()
+            try {
+                if (context.getTick() >= 2800L) {
+                    completed[0] = true;
+                    removeRouteTicket.run();
+                    context.throwGameTestException(
+                        "Approaching extended-target fixture did not finish before its cleanup deadline"
+                    );
+                }
+                if (!routeActivated[0]) {
+                    if (context.getTick() >= 1200L) {
+                        completed[0] = true;
+                        removeRouteTicket.run();
+                        context.throwGameTestException(
+                            "Timed out waiting for approaching route chunks to become entity-ticking"
+                        );
+                    }
+                    if (!routeChunksReady.isDone()
+                        || !routeChunksAreEntityTicking(context, postPos, targetPos)) {
+                        return;
+                    }
+                    routeChunksReady.join();
+                    worker.setAiDisabled(false);
+                    routeActivated[0] = true;
+                }
+                if (!configured[0]) {
+                    post.refreshCatalogue(true);
+                    post.getOffers().stream()
+                        .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+                        .findFirst()
+                        .ifPresent(snapshot -> {
+                            post.setOfferEnabledInternal(snapshot.fingerprint(), true);
+                            post.setStack(0, new ItemStack(Items.PAPER));
+                            configured[0] = true;
+                            movementStart[0] = context.getTick();
+                        });
+                }
+                maximumWorkerDistance[0] = Math.max(
+                    maximumWorkerDistance[0],
+                    Math.sqrt(worker.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos()))
+                );
+                if (configured[0] && context.getTick() - movementStart[0] < 55L) {
+                    target.setVelocity(-0.12, 0.0, 0.0);
+                    target.setPosition(target.getX() - 0.12, target.getY(), target.getZ());
+                } else {
+                    target.setVelocity(Vec3d.ZERO);
+                }
+                if (movementStart[0] < 0L || context.getTick() - movementStart[0] < 1300L) {
+                    return;
+                }
+                completed[0] = true;
+                removeRouteTicket.run();
+                MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+                String diagnostics = " (state=" + state.state()
                 + ", status=" + state.status()
                 + ", failure=" + state.lastFailure()
+                + ", stateTicks=" + state.stateTicks()
                 + ", worker=" + worker.getEntityPos()
                 + ", target=" + target.getEntityPos()
+                + ", targetDistance=" + Math.sqrt(worker.squaredDistanceTo(target))
                 + ", targetVelocity=" + target.getVelocity()
+                + ", workerVelocity=" + worker.getVelocity()
+                + ", workerOnGround=" + worker.isOnGround()
+                + ", workerWater=" + worker.isTouchingWater()
+                + ", interactionLine=" + MerchantTradeExecutor.hasInteractionLine(worker, target)
+                + ", directApproach=" + state.directApproachActive()
+                + ", navigationIdle=" + worker.getNavigation().isIdle()
+                + ", navigationTarget=" + worker.getNavigation().getTargetPos()
+                + ", moveControlMoving=" + worker.getMoveControl().isMoving()
+                + ", moveControlSpeed=" + worker.getMoveControl().getSpeed()
+                + ", walkTarget=" + worker.getBrain()
+                    .getOptionalRegisteredMemory(MemoryModuleType.WALK_TARGET)
+                + ", workerChunk=" + new ChunkPos(worker.getBlockPos())
+                + ", targetChunk=" + new ChunkPos(target.getBlockPos())
+                + ", workerChunkLoaded=" + context.getWorld().isChunkLoaded(worker.getBlockPos())
+                + ", targetChunkLoaded=" + context.getWorld().isChunkLoaded(target.getBlockPos())
+                + ", workerSupport=" + context.getWorld().getBlockState(worker.getBlockPos().down())
                 + ", postDistance=" + Math.sqrt(
                     target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos())
                 )
@@ -889,31 +981,62 @@ public final class MerchantTradingGameTest {
                 + ", workerProfession=" + worker.getVillagerData().profession().getIdAsString()
                 + ", workerActivity=" + worker.getBrain().getFirstPossibleNonCoreActivity()
                 + ")";
-            context.assertTrue(
-                configured[0],
-                extendedDiscoveryFailure(context, postPos, target, post)
-            );
-            context.assertEquals(
-                1,
-                offer.getUses(),
-                "Approaching extended target must complete one real use" + diagnostics
-            );
-            context.assertEquals(
-                1,
-                context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.EMERALD),
-                "Extended target reward must return to the output chest" + diagnostics
-            );
-            context.assertTrue(
-                Math.sqrt(target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos()))
-                    <= MerchantVillagerConfig.NORMAL_RADIUS,
-                "Extended target must approach into the normal 55-block radius before being pursued"
-            );
-            context.assertTrue(
-                maximumWorkerDistance[0] <= MerchantVillagerConfig.EXTENDED_RADIUS + 0.25,
-                "Merchant must remain inside the absolute 66-block tether"
-            );
-            context.complete();
+                context.assertTrue(
+                    configured[0],
+                    extendedDiscoveryFailure(context, postPos, target, post)
+                );
+                context.assertEquals(
+                    1,
+                    offer.getUses(),
+                    "Approaching extended target must complete one real use" + diagnostics
+                );
+                context.assertEquals(
+                    1,
+                    context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.EMERALD),
+                    "Extended target reward must return to the output chest" + diagnostics
+                );
+                context.assertTrue(
+                    Math.sqrt(target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos()))
+                        <= MerchantVillagerConfig.NORMAL_RADIUS,
+                    "Extended target must approach into the normal 55-block radius before being pursued"
+                );
+                context.assertTrue(
+                    maximumWorkerDistance[0] <= MerchantVillagerConfig.EXTENDED_RADIUS + 0.25,
+                    "Merchant must remain inside the absolute 66-block tether"
+                );
+                context.complete();
+            } catch (RuntimeException | Error failure) {
+                completed[0] = true;
+                removeRouteTicket.run();
+                throw failure;
+            }
         });
+    }
+
+    private static boolean routeChunksAreEntityTicking(
+        TestContext context, BlockPos relativeStart, BlockPos relativeEnd
+    ) {
+        BlockPos start = context.getAbsolutePos(relativeStart);
+        BlockPos end = context.getAbsolutePos(relativeEnd);
+        ChunkPos startChunk = new ChunkPos(start);
+        ChunkPos endChunk = new ChunkPos(end);
+        int minX = Math.min(startChunk.x, endChunk.x);
+        int maxX = Math.max(startChunk.x, endChunk.x);
+        int minZ = Math.min(startChunk.z, endChunk.z);
+        int maxZ = Math.max(startChunk.z, endChunk.z);
+        for (int chunkX = minX; chunkX <= maxX; chunkX++) {
+            for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
+                BlockPos probe = new BlockPos(
+                    (chunkX << 4) + 8,
+                    start.getY(),
+                    (chunkZ << 4) + 8
+                );
+                if (!context.getWorld().shouldTickEntityAt(probe)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static String extendedDiscoveryFailure(
