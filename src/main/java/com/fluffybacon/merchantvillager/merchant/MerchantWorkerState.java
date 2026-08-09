@@ -35,6 +35,9 @@ public final class MerchantWorkerState {
     private int completedExecutions;
     private int stateTicks;
     private int pathRetries;
+    private double pathObservationDistance = -1.0;
+    private int pathStallObservations;
+    private boolean directApproachActive;
     private long reservationExpiry;
     private String status = "Merchant idle";
     private String lastFailure = "";
@@ -53,6 +56,9 @@ public final class MerchantWorkerState {
         this.status = status;
         this.stateTicks = 0;
         this.pathRetries = 0;
+        this.pathObservationDistance = -1.0;
+        this.pathStallObservations = 0;
+        this.directApproachActive = false;
     }
 
     public void tickAge() {
@@ -214,6 +220,31 @@ public final class MerchantWorkerState {
 
     public void pathSucceeded() {
         pathRetries = 0;
+    }
+
+    public void observePathDistance(double distance) {
+        if (pathObservationDistance < 0.0
+            || pathObservationDistance - distance >= MerchantVillagerConfig.PATH_MIN_PROGRESS) {
+            pathObservationDistance = distance;
+            pathStallObservations = 0;
+        } else {
+            // Compare against the best distance, not merely the previous
+            // sample. A villager oscillating between two nodes must not count
+            // each return toward the target as fresh route progress.
+            pathStallObservations++;
+        }
+    }
+
+    public boolean pathStalled() {
+        return pathStallObservations >= MerchantVillagerConfig.PATH_STALL_OBSERVATIONS;
+    }
+
+    public boolean directApproachActive() {
+        return directApproachActive;
+    }
+
+    public void beginDirectApproach() {
+        directApproachActive = true;
     }
 
     public long reservationExpiry() {

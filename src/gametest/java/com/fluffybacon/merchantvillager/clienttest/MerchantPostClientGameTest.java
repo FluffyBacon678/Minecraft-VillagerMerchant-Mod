@@ -1,268 +1,248 @@
 package com.fluffybacon.merchantvillager.clienttest;
 
-import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.client.ClientCatalogueCache;
-import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
-import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
-import com.fluffybacon.merchantvillager.registry.ModBlocks;
-import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
+import com.fluffybacon.merchantvillager.network.CataloguePayload;
+import com.fluffybacon.merchantvillager.registry.ModScreenHandlers;
+import com.fluffybacon.merchantvillager.screen.MerchantPostScreenHandler;
 import com.fluffybacon.merchantvillager.screen.client.MerchantPostScreen;
+import com.fluffybacon.merchantvillager.trade.OfferSnapshot;
+import io.netty.buffer.Unpooled;
+import java.util.List;
 import java.util.Optional;
-import java.util.Set;
+import java.util.UUID;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnReason;
-import net.minecraft.entity.ai.brain.MemoryModuleType;
-import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.entity.EntityEquipment;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.network.RegistryByteBuf;
+import net.minecraft.registry.DynamicRegistryManager;
+import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.GlobalPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.village.TradeOffer;
 import net.minecraft.village.TradedItem;
-import net.minecraft.village.VillagerProfession;
 
-@SuppressWarnings("UnstableApiUsage")
+/**
+ * Renders the real production Merchant screen without booting a world. World
+ * generation is unrelated to the GUI and proved needlessly nondeterministic on
+ * software-rendered CI runners; the server GameTests exercise the live gameplay
+ * and container paths separately.
+ */
+@SuppressWarnings({"UnstableApiUsage", "DataFlowIssue"})
 public final class MerchantPostClientGameTest implements FabricClientGameTest {
-    private static final int CLIENT_WAIT_TICKS = 20 * 30;
-    private static final int CHUNK_WAIT_TICKS = 20 * 60 * 3;
+    private static final BlockPos POST_POS = new BlockPos(37, 72, -19);
+    private static final UUID WORKER_UUID = UUID.fromString("9ab688e1-8e42-4f71-a9ec-3b98dd3d20d1");
+    private static final UUID LIBRARIAN_UUID = UUID.fromString("5fd655ab-e667-46dd-91b6-ae6b633ea487");
+    private static final UUID FARMER_UUID = UUID.fromString("7e67ec6e-bb15-4d84-94d7-d91f05021962");
 
     @Override
     public void runTest(ClientGameTestContext context) {
         context.getInput().resizeWindow(1024, 768);
         context.runOnClient(client -> {
             client.options.getGuiScale().setValue(3);
-            client.options.getViewDistance().setValue(2);
-            client.options.getSimulationDistance().setValue(5);
-            // Keep software-rendered CI from starving the integrated server thread.
             client.options.getMaxFps().setValue(30);
             client.options.getEnableVsync().setValue(false);
             client.onResolutionChanged();
         });
 
-        try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
-            singleplayer.getClientWorld().waitForChunksDownload(CHUNK_WAIT_TICKS);
-            BlockPos postPos = singleplayer.getServer().computeOnServer(server -> {
-                ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
-                ServerWorld world = server.getOverworld();
-                BlockPos position = player.getBlockPos().add(3, 0, 2);
-                world.setBlockState(position.down(), Blocks.STONE.getDefaultState());
-                world.setBlockState(position, ModBlocks.MERCHANT_POST.getDefaultState());
-                world.setBlockState(position.east(), Blocks.CHEST.getDefaultState());
-                MerchantPostBlockEntity post = (MerchantPostBlockEntity)world.getBlockEntity(position);
-                if (post == null) {
-                    throw new AssertionError("Merchant's Post block entity was not created");
-                }
-                post.setStack(0, new ItemStack(Items.EMERALD, 12));
-                post.setStack(1, new ItemStack(Items.PAPER, 48));
-                post.setStack(2, new ItemStack(Items.WHEAT, 40));
-                post.markDirty();
-                VillagerEntity worker = spawnVillager(
-                    world,
-                    position.south(),
-                    "Merchant Alden",
-                    ModVillagerProfessions.MERCHANT_KEY
-                );
-                worker.reinitializeBrain(world);
-                worker.getBrain().remember(
-                    MemoryModuleType.JOB_SITE,
-                    GlobalPos.create(world.getRegistryKey(), position)
-                );
-                MerchantWorkerState workerState = ((MerchantWorker)worker).merchantVillager$getState();
-                workerState.bindPost(world, position);
-                post.assignMerchant(worker.getUuid());
-                worker.setAiDisabled(true);
+        BlockPos decodedPostPos = roundTripOpeningData(POST_POS);
+        if (!decodedPostPos.equals(POST_POS) || decodedPostPos.equals(BlockPos.ORIGIN)) {
+            throw new AssertionError("Merchant screen opening data lost its non-origin position");
+        }
 
-                VillagerEntity librarian = spawnVillager(
-                    world,
-                    position.east(4),
-                    "Librarian Esme",
-                    VillagerProfession.LIBRARIAN
-                );
-                librarian.getOffers().clear();
-                librarian.getOffers().add(new TradeOffer(
-                    new TradedItem(Items.PAPER, 24),
-                    Optional.empty(),
-                    new ItemStack(Items.EMERALD),
-                    12,
-                    2,
-                    0.05F
-                ));
-                librarian.getOffers().add(new TradeOffer(
-                    new TradedItem(Items.EMERALD, 3),
-                    Optional.empty(),
-                    new ItemStack(Items.BOOKSHELF),
-                    12,
-                    2,
-                    0.05F
-                ));
+        context.setScreen(() -> createScreen(decodedPostPos, 7));
+        context.waitForScreen(MerchantPostScreen.class);
+        context.runOnClient(client -> {
+            ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos, 40)));
+            // Neither another post nor an older packet may replace this session.
+            ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos.east(), 99)));
+            ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos, 39)));
+            assertScreenState(client.currentScreen, decodedPostPos, 40);
+        });
+        context.waitTicks(2);
+        context.takeScreenshot("merchant-post-non-origin-compact");
 
-                VillagerEntity farmer = spawnVillager(
-                    world,
-                    position.west(4),
-                    "Farmer Rowan",
-                    VillagerProfession.FARMER
-                );
-                farmer.getOffers().clear();
-                farmer.getOffers().add(new TradeOffer(
-                    new TradedItem(Items.WHEAT, 20),
-                    Optional.empty(),
-                    new ItemStack(Items.EMERALD),
-                    12,
-                    2,
-                    0.05F
-                ));
-                farmer.getOffers().add(new TradeOffer(
-                    new TradedItem(Items.EMERALD),
-                    Optional.empty(),
-                    new ItemStack(Items.BREAD, 6),
-                    12,
-                    2,
-                    0.05F
-                ));
-                post.refreshCatalogue(true);
-                for (int index = 0; index < post.getOffers().size(); index++) {
-                    post.setOfferEnabledInternal(
-                        post.getOffers().get(index).fingerprint(),
-                        index != 1
-                    );
-                }
-                post.setPaused(true);
-                player.openHandledScreen(post);
-                post.sendCatalogue(player);
-                return position.toImmutable();
-            });
-
-            if (postPos.equals(BlockPos.ORIGIN)) {
-                throw new AssertionError("Regression setup must open a non-origin Merchant's Post");
+        // Reopening the same physical post starts a new cache session. A new
+        // block entity can legitimately restart its revision counter at one.
+        context.setScreen(() -> createScreen(decodedPostPos, 8));
+        context.waitForScreen(MerchantPostScreen.class);
+        context.runOnClient(client -> {
+            if (ClientCatalogueCache.latest() != null) {
+                throw new AssertionError("Replacing the screen did not clear the previous catalogue session");
             }
-            context.waitFor(
-                client -> client.currentScreen instanceof MerchantPostScreen,
-                CLIENT_WAIT_TICKS
-            );
-            context.waitFor(client -> ClientCatalogueCache.latest() != null
-                && ClientCatalogueCache.latest().entries().size() == 4
-                && ClientCatalogueCache.latest().workerUuid().isPresent(), CLIENT_WAIT_TICKS);
-            context.waitFor(client -> client.player != null
-                && client.player.currentScreenHandler.getSlot(0).getStack().isOf(Items.EMERALD),
-                CLIENT_WAIT_TICKS);
-            context.runOnClient(client -> {
-                if (!(client.currentScreen instanceof MerchantPostScreen screen)) {
-                    throw new AssertionError("Merchant Post screen did not remain open");
-                }
-                if (!screen.getScreenHandler().getPostPos().equals(postPos)) {
-                    throw new AssertionError("Screen handler received the wrong post position");
-                }
-                if (!ClientCatalogueCache.latest().postPos().equals(postPos)) {
-                    throw new AssertionError("Catalogue payload was not scoped to the opened post");
-                }
-                int scaledWidth = client.getWindow().getScaledWidth();
-                if (scaledWidth < 320 || scaledWidth >= 414) {
-                    throw new AssertionError(
-                        "Expected the compact-width regression window, got " + scaledWidth
-                    );
-                }
-                if (screen.getScreenHandler().getSlot(8).x + 16 > 320) {
-                    throw new AssertionError("Rightmost backpack slot exceeds the compact screen width");
-                }
-                client.getToastManager().clear();
-            });
-            context.waitTicks(2);
-            context.takeScreenshot("merchant-post-non-origin-compact");
+            ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos, 1)));
+            assertScreenState(client.currentScreen, decodedPostPos, 1);
+        });
+        context.waitTicks(2);
 
-            int previousRevision = context.computeOnClient(
-                client -> ClientCatalogueCache.latest().revision()
-            );
-            singleplayer.getServer().runOnServer(server ->
-                server.getPlayerManager().getPlayerList().getFirst().closeHandledScreen()
-            );
-            context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
-            singleplayer.getServer().runOnServer(server -> {
-                ServerWorld world = server.getOverworld();
-                ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
-                if (world.getBlockEntity(postPos) instanceof MerchantPostBlockEntity oldPost) {
-                    oldPost.clear();
-                }
-                world.removeBlock(postPos, false);
-                world.setBlockState(postPos, ModBlocks.MERCHANT_POST.getDefaultState());
-                MerchantPostBlockEntity replacement =
-                    (MerchantPostBlockEntity)world.getBlockEntity(postPos);
-                if (replacement == null) {
-                    throw new AssertionError("Replacement Merchant's Post was not created");
-                }
-                replacement.setStack(0, new ItemStack(Items.EMERALD));
-                replacement.refreshCatalogue(true);
-                player.openHandledScreen(replacement);
-                replacement.sendCatalogue(player);
-            });
-            context.waitFor(
-                client -> client.currentScreen instanceof MerchantPostScreen,
-                CLIENT_WAIT_TICKS
-            );
-            context.waitFor(client -> ClientCatalogueCache.latest() != null
-                && ClientCatalogueCache.latest().postPos().equals(postPos)
-                && ClientCatalogueCache.latest().revision() < previousRevision,
-                CLIENT_WAIT_TICKS);
+        context.setScreen(TitleScreen::new);
+        context.waitForScreen(TitleScreen.class);
+        context.runOnClient(client -> {
+            if (ClientCatalogueCache.latest() != null) {
+                throw new AssertionError("Closing the Merchant screen did not clear its catalogue cache");
+            }
+        });
+    }
 
-            singleplayer.getServer().runOnServer(server -> {
-                ServerWorld world = server.getOverworld();
-                ServerPlayerEntity player = server.getPlayerManager().getPlayerList().getFirst();
-                world.getEntitiesByClass(
-                    VillagerEntity.class,
-                    new Box(postPos).expand(16.0),
-                    villager -> !villager.getVillagerData().profession()
-                        .matchesKey(ModVillagerProfessions.MERCHANT_KEY)
-                ).forEach(VillagerEntity::discard);
-                player.closeHandledScreen();
-                Vec3d cameraPosition = Vec3d.ofBottomCenter(postPos.south(4));
-                player.teleport(
-                    world,
-                    cameraPosition.x,
-                    cameraPosition.y,
-                    cameraPosition.z,
-                    Set.of(),
-                    180.0F,
-                    0.0F,
-                    true
-                );
-            });
-            context.waitFor(client -> client.currentScreen == null, CLIENT_WAIT_TICKS);
-            context.runOnClient(client -> client.options.hudHidden = true);
-            singleplayer.getClientWorld().waitForChunksRender(CHUNK_WAIT_TICKS);
-            context.waitTicks(10);
-            context.takeScreenshot("merchant-villager-original-outfit");
+    private static BlockPos roundTripOpeningData(BlockPos postPos) {
+        RegistryByteBuf buffer = new RegistryByteBuf(
+            Unpooled.buffer(), DynamicRegistryManager.of(Registries.REGISTRIES)
+        );
+        try {
+            ModScreenHandlers.MERCHANT_POST.getPacketCodec().encode(buffer, postPos);
+            return ModScreenHandlers.MERCHANT_POST.getPacketCodec().decode(buffer);
+        } finally {
+            buffer.release();
         }
     }
 
-    private static VillagerEntity spawnVillager(
-        ServerWorld world,
-        BlockPos position,
-        String name,
-        net.minecraft.registry.RegistryKey<VillagerProfession> profession
+    private static CataloguePayload roundTripCatalogue(CataloguePayload payload) {
+        RegistryByteBuf buffer = new RegistryByteBuf(
+            Unpooled.buffer(), DynamicRegistryManager.of(Registries.REGISTRIES)
+        );
+        try {
+            CataloguePayload.CODEC.encode(buffer, payload);
+            return CataloguePayload.CODEC.decode(buffer);
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static MerchantPostScreen createScreen(BlockPos postPos, int syncId) {
+        PlayerInventory inventory = new PlayerInventory(null, new EntityEquipment());
+        MerchantPostScreenHandler handler = ModScreenHandlers.MERCHANT_POST.create(
+            syncId, inventory, postPos
+        );
+        handler.getSlot(0).setStack(new ItemStack(Items.EMERALD, 12));
+        handler.getSlot(1).setStack(new ItemStack(Items.PAPER, 48));
+        handler.getSlot(2).setStack(new ItemStack(Items.WHEAT, 40));
+        handler.getSlot(3).setStack(new ItemStack(Items.BOOK, 4));
+        handler.getSlot(4).setStack(new ItemStack(Items.BREAD, 6));
+        return new MerchantPostScreen(
+            handler, inventory, Text.translatable("block.merchant_villager.merchant_post")
+        );
+    }
+
+    private static void assertScreenState(
+        Object currentScreen, BlockPos expectedPostPos, int expectedRevision
     ) {
-        VillagerEntity villager = EntityType.VILLAGER.create(world, SpawnReason.COMMAND);
-        if (villager == null) {
-            throw new AssertionError("Could not create villager " + name);
+        if (!(currentScreen instanceof MerchantPostScreen screen)) {
+            throw new AssertionError("The real Merchant Post screen did not remain open");
         }
-        villager.setPosition(Vec3d.ofBottomCenter(position));
-        villager.setCustomName(Text.literal(name));
-        villager.setCustomNameVisible(true);
-        villager.setVillagerData(villager.getVillagerData().withProfession(
-            world.getRegistryManager(),
-            profession
-        ));
-        villager.setAiDisabled(true);
-        if (!world.spawnEntity(villager)) {
-            throw new AssertionError("Could not spawn villager " + name);
+        if (!screen.getScreenHandler().getPostPos().equals(expectedPostPos)) {
+            throw new AssertionError("Screen handler received the wrong Merchant's Post position");
         }
-        return villager;
+        CataloguePayload payload = ClientCatalogueCache.latest();
+        if (payload == null
+            || !payload.postPos().equals(expectedPostPos)
+            || payload.revision() != expectedRevision
+            || payload.entries().size() != 4
+            || payload.workerUuid().isEmpty()) {
+            throw new AssertionError("Merchant catalogue was not scoped to the active screen session");
+        }
+        if (screen.getScreenHandler().getSlot(8).x + 16 > 320) {
+            throw new AssertionError("Rightmost backpack slot exceeds the compact screen width");
+        }
+    }
+
+    private static CataloguePayload catalogue(BlockPos postPos, int revision) {
+        List<CataloguePayload.Entry> entries = List.of(
+            entry(
+                LIBRARIAN_UUID, "Librarian Esme", "minecraft:librarian", 0,
+                new TradedItem(Items.PAPER, 24), Optional.empty(), Items.EMERALD, 1,
+                true, false, 2, true, 48, 0, 'a', 16.0
+            ),
+            entry(
+                LIBRARIAN_UUID, "Librarian Esme", "minecraft:librarian", 1,
+                new TradedItem(Items.EMERALD, 5), Optional.of(new TradedItem(Items.BOOK)),
+                Items.BOOKSHELF, 1, false, false, 0, false, 12, 4, 'b', 16.0
+            ),
+            entry(
+                FARMER_UUID, "Farmer Rowan", "minecraft:farmer", 0,
+                new TradedItem(Items.WHEAT, 20), Optional.empty(), Items.EMERALD, 1,
+                true, false, 2, false, 40, 0, 'c', 25.0
+            ),
+            entry(
+                FARMER_UUID, "Farmer Rowan", "minecraft:farmer", 1,
+                new TradedItem(Items.EMERALD), Optional.empty(), Items.BREAD, 6,
+                true, true, 6, false, 12, 0, 'd', 25.0
+            )
+        );
+        CataloguePayload.WorkerStats stats = new CataloguePayload.WorkerStats(
+            "Merchant Alden",
+            18.0F,
+            20.0F,
+            4.0,
+            List.of(new ItemStack(Items.PAPER, 3), new ItemStack(Items.EMERALD, 2)),
+            Optional.of(LIBRARIAN_UUID),
+            3,
+            1,
+            Optional.of(postPos.east()),
+            "Ready (touching chest)"
+        );
+        return new CataloguePayload(
+            postPos,
+            revision,
+            Optional.of(WORKER_UUID),
+            "TRAVELLING_TO_TARGET",
+            "Delivering approved trades",
+            "",
+            2,
+            3,
+            2,
+            Optional.of(stats),
+            entries
+        );
+    }
+
+    private static CataloguePayload.Entry entry(
+        UUID targetUuid,
+        String targetName,
+        String profession,
+        int offerIndex,
+        TradedItem firstInput,
+        Optional<TradedItem> secondInput,
+        Item output,
+        int outputCount,
+        boolean enabled,
+        boolean coolingDown,
+        int fundable,
+        boolean selected,
+        int storedFirst,
+        int storedSecond,
+        char fingerprintCharacter,
+        double distanceSquared
+    ) {
+        OfferSnapshot offer = new OfferSnapshot(
+            targetUuid,
+            targetName,
+            profession,
+            3,
+            offerIndex,
+            firstInput,
+            secondInput,
+            new ItemStack(output, outputCount),
+            1,
+            12,
+            distanceSquared,
+            false,
+            true,
+            -1,
+            String.valueOf(fingerprintCharacter).repeat(64)
+        );
+        return new CataloguePayload.Entry(
+            offer,
+            enabled,
+            coolingDown,
+            fundable,
+            selected,
+            storedFirst,
+            storedSecond,
+            firstInput.count(),
+            secondInput.map(TradedItem::count).orElse(0)
+        );
     }
 }

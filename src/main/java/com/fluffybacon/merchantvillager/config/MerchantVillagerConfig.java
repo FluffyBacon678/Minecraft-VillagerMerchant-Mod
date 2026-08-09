@@ -6,6 +6,10 @@ public final class MerchantVillagerConfig {
     public static final int CATALOGUE_SCAN_INTERVAL = 40;
     public static final int PATH_RETRY_INTERVAL = 20;
     public static final int MAX_PATH_RETRIES = 4;
+    public static final double PATH_MIN_PROGRESS = 0.5;
+    public static final int PATH_STALL_OBSERVATIONS = 2;
+    public static final double DIRECT_APPROACH_DISTANCE_SQUARED = 12.0 * 12.0;
+    public static final double STALLED_DIRECT_APPROACH_DISTANCE_SQUARED = 32.0 * 32.0;
     public static final int MEET_HALFWAY_OBSERVATION_TICKS = 20;
     public static final int MEET_HALFWAY_FAILURE_TICKS = 40;
     public static final double MEET_HALFWAY_MIN_PROGRESS = 0.75;

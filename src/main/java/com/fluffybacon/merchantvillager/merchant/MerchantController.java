@@ -779,7 +779,7 @@ public final class MerchantController {
     private static void navigateToTarget(
         ServerWorld world,
         VillagerEntity villager,
-        Entity target,
+        MerchantEntity target,
         MerchantWorkerState state,
         MerchantPostBlockEntity post
     ) {
@@ -794,32 +794,63 @@ public final class MerchantController {
         boolean initialAttempt = state.stateTicks() <= 1;
         boolean scheduledRetry =
             state.stateTicks() % MerchantVillagerConfig.PATH_RETRY_INTERVAL == 0;
-        if (!initialAttempt && !scheduledRetry) {
+        double targetDistanceSquared = villager.squaredDistanceTo(target);
+        if (initialAttempt || scheduledRetry) {
+            state.observePathDistance(Math.sqrt(targetDistanceSquared));
+        }
+        boolean stalledRoute = state.pathStalled();
+        boolean directApproachAllowed =
+            targetDistanceSquared <= MerchantVillagerConfig.DIRECT_APPROACH_DISTANCE_SQUARED
+            || ((stalledRoute || state.directApproachActive())
+                && targetDistanceSquared
+                    <= MerchantVillagerConfig.STALLED_DIRECT_APPROACH_DISTANCE_SQUARED);
+        if (directApproachAllowed
+            && tryDirectFinalApproach(world, villager, target, state, post.getPos())) {
             return;
         }
+        Path currentPath = villager.getNavigation().getCurrentPath();
+        boolean completedUsefulPartial = villager.getNavigation().isIdle()
+            && currentPath != null
+            && currentPath.isFinished()
+            && !currentPath.reachesTarget();
+        if (!initialAttempt && !scheduledRetry && !completedUsefulPartial) {
+            return;
+        }
+        if (!stalledRoute
+            && !villager.getNavigation().isIdle()
+            && currentPath != null
+            && !currentPath.isFinished()
+            && villager.getNavigation().getTargetPos() != null
+            && villager.getNavigation().getTargetPos().equals(target.getBlockPos())) {
+            // Keep a healthy route to a stationary target. Restarting it every
+            // retry interval resets vanilla's node timeout and can strand a
+            // courier forever on the final partial node.
+            state.pathSucceeded();
+            return;
+        }
+        boolean stalledFailureRecorded = false;
+        if (stalledRoute) {
+            stalledFailureRecorded = true;
+            if (recordTargetPathFailure(world, villager, state, post)) {
+                return;
+            }
+        }
         if (!villager.getNavigation().isIdle()) {
-            // EntityNavigation may keep an unfinished route to an entity's old
-            // position after that entity moves. It can also reuse a route that
-            // reports reaching a distant target but ends at a stale endpoint.
-            // Refresh the initial route and scheduled retries from both
-            // entities' current positions.
+            // The target moved far enough that the route is genuinely stale.
             villager.getNavigation().stop();
         }
-        if (!villager.getNavigation().startMovingTo(
-            target.getX(), target.getY(), target.getZ(), 0.55
-        )) {
-            state.pathRetried();
-            if (state.pathRetries() >= MerchantVillagerConfig.MAX_PATH_RETRIES) {
-                post.markUnreachable(
-                    state.offerFingerprint(),
-                    world.getTime() + MerchantVillagerConfig.UNREACHABLE_COOLDOWN
-                );
-                stopMerchantNavigation(villager);
-                recover(state, "Target unreachable");
+        if (villager.getNavigation().startMovingTo(target, 0.55)) {
+            Path path = villager.getNavigation().getCurrentPath();
+            if (path == null || (!path.reachesTarget() && !pathMakesProgress(path, villager, target))) {
+                if (!stalledFailureRecorded) {
+                    recordTargetPathFailure(world, villager, state, post);
+                }
+                return;
             }
-        } else {
-            state.pathSucceeded();
-            if (pathExceedsTether(villager.getNavigation().getCurrentPath(), post.getPos())) {
+            if (!stalledFailureRecorded) {
+                state.pathSucceeded();
+            }
+            if (pathExceedsTether(path, post.getPos())) {
                 stopMerchantNavigation(villager);
                 post.markUnreachable(
                     state.offerFingerprint(),
@@ -827,7 +858,111 @@ public final class MerchantController {
                 );
                 recover(state, "Target path would exceed Merchant's Post tether");
             }
+        } else {
+            if (!stalledFailureRecorded) {
+                recordTargetPathFailure(world, villager, state, post);
+            }
         }
+    }
+
+    /**
+     * Vanilla may return a successful partial path whose final node is the
+     * courier's current node. Treat only partial paths that actually close the
+     * distance as usable, so repeated no-op paths reach the normal cooldown and
+     * recovery flow instead of resetting the retry counter forever.
+     */
+    private static boolean pathMakesProgress(Path path, VillagerEntity villager, Entity target) {
+        if (path.getEnd() == null) {
+            return false;
+        }
+        double currentDistance = villager.getBlockPos().getSquaredDistance(target.getBlockPos());
+        double endDistance = path.getEnd().getBlockPos().getSquaredDistance(target.getBlockPos());
+        return endDistance + 1.0 < currentDistance;
+    }
+
+    private static boolean recordTargetPathFailure(
+        ServerWorld world,
+        VillagerEntity villager,
+        MerchantWorkerState state,
+        MerchantPostBlockEntity post
+    ) {
+        state.pathRetried();
+        if (state.pathRetries() < MerchantVillagerConfig.MAX_PATH_RETRIES) {
+            return false;
+        }
+        post.markUnreachable(
+            state.offerFingerprint(),
+            world.getTime() + MerchantVillagerConfig.UNREACHABLE_COOLDOWN
+        );
+        stopMerchantNavigation(villager);
+        recover(state, "Target unreachable");
+        return true;
+    }
+
+    /**
+     * Finish short approaches, or a nearby path that the progress watchdog
+     * proved is stalled, with vanilla move control. Every use is limited to a
+     * sampled, level, continuously supported route inside the post tether;
+     * walls, pits, fluids, slopes, and distant stalls still require pathfinding.
+     */
+    private static boolean tryDirectFinalApproach(
+        ServerWorld world,
+        VillagerEntity villager,
+        MerchantEntity target,
+        MerchantWorkerState state,
+        BlockPos postPos
+    ) {
+        if (!villager.isOnGround()
+            || villager.isTouchingWater()
+            || Math.abs(villager.getY() - target.getY()) > 1.0
+            || !MerchantTradeExecutor.hasInteractionLine(villager, target)
+            || !hasSafeDirectApproach(world, villager, target, postPos)) {
+            return false;
+        }
+        // WALK_TARGET is published above for normal pathfinding. Clear it as
+        // soon as direct movement takes ownership, otherwise the villager's
+        // brain can recreate a path and override MoveControl on the next tick.
+        stopMerchantNavigation(villager);
+        villager.getMoveControl().moveTo(target.getX(), target.getY(), target.getZ(), 0.55);
+        state.beginDirectApproach();
+        state.pathSucceeded();
+        state.status("Closing final distance to target merchant");
+        return true;
+    }
+
+    private static boolean hasSafeDirectApproach(
+        ServerWorld world, VillagerEntity villager, Entity target, BlockPos postPos
+    ) {
+        Vec3d start = villager.getEntityPos();
+        Vec3d delta = target.getEntityPos().subtract(start);
+        double horizontalDistance = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+        double tetherSquared =
+            MerchantVillagerConfig.EXTENDED_RADIUS * MerchantVillagerConfig.EXTENDED_RADIUS;
+        int samples = Math.max(1, (int)Math.ceil(horizontalDistance * 2.0));
+        for (int sample = 1; sample <= samples; sample++) {
+            double fraction = (double)sample / samples;
+            double offsetX = delta.x * fraction;
+            double offsetZ = delta.z * fraction;
+            Vec3d samplePosition = start.add(offsetX, 0.0, offsetZ);
+            if (samplePosition.squaredDistanceTo(postPos.toCenterPos()) > tetherSquared) {
+                return false;
+            }
+            if (!world.isBlockSpaceEmpty(
+                villager,
+                villager.getBoundingBox().offset(offsetX, 0.0, offsetZ)
+            )) {
+                return false;
+            }
+            BlockPos support = BlockPos.ofFloored(
+                samplePosition.x,
+                villager.getY() - 0.05,
+                samplePosition.z
+            );
+            if (world.getBlockState(support).getCollisionShape(world, support).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean pathExceedsTether(Path path, BlockPos postPos) {
