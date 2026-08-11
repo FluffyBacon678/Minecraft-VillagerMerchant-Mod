@@ -45,6 +45,9 @@ public final class MerchantWorkerState {
     private boolean postDestroyed;
     private double observedDistance;
     private int noConvergenceTicks;
+    private int storedExperience;
+    private int interactionDurationTicks;
+    private int interactionElapsedTicks;
     private final List<PendingTrade> pendingTrades = new ArrayList<>();
 
     public MerchantState state() {
@@ -59,6 +62,10 @@ public final class MerchantWorkerState {
         this.pathObservationDistance = -1.0;
         this.pathStallObservations = 0;
         this.directApproachActive = false;
+        if (next != MerchantState.TRADING_BUSY) {
+            this.interactionDurationTicks = 0;
+            this.interactionElapsedTicks = 0;
+        }
     }
 
     public void tickAge() {
@@ -84,6 +91,10 @@ public final class MerchantWorkerState {
     public void fail(String failure) {
         this.lastFailure = failure;
         this.status = failure;
+    }
+
+    public void clearFailure() {
+        this.lastFailure = "";
     }
 
     @Nullable
@@ -276,6 +287,47 @@ public final class MerchantWorkerState {
         return noConvergenceTicks;
     }
 
+    public int storedExperience() {
+        return storedExperience;
+    }
+
+    public void addStoredExperience(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        storedExperience = (int)Math.min(
+            Integer.MAX_VALUE,
+            (long)storedExperience + amount
+        );
+    }
+
+    public int drainStoredExperience() {
+        int drained = storedExperience;
+        storedExperience = 0;
+        return drained;
+    }
+
+    public void beginTradingInteraction(int durationTicks) {
+        interactionDurationTicks = Math.max(1, durationTicks);
+        interactionElapsedTicks = 0;
+    }
+
+    public int interactionDurationTicks() {
+        return interactionDurationTicks;
+    }
+
+    public int interactionElapsedTicks() {
+        return interactionElapsedTicks;
+    }
+
+    public boolean advanceTradingInteraction() {
+        if (interactionDurationTicks <= 0) {
+            return true;
+        }
+        interactionElapsedTicks++;
+        return interactionElapsedTicks >= interactionDurationTicks;
+    }
+
     public void resetConvergence() {
         noConvergenceTicks = 0;
     }
@@ -449,6 +501,17 @@ public final class MerchantWorkerState {
         rewardSlots.clear(slot);
     }
 
+    public ItemStack takeCargo(int slot, int amount) {
+        if (slot < 0 || slot >= cargo.size() || amount <= 0) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack removed = cargo.get(slot).split(amount);
+        if (cargo.get(slot).isEmpty()) {
+            clearSlot(slot);
+        }
+        return removed;
+    }
+
     public void write(WriteView root) {
         WriteView view = root.get("MerchantVillager");
         Inventories.writeData(view, cargo);
@@ -471,6 +534,7 @@ public final class MerchantWorkerState {
         view.putBoolean("PostDestroyed", postDestroyed);
         view.putDouble("ObservedDistance", observedDistance);
         view.putInt("NoConvergenceTicks", noConvergenceTicks);
+        view.putInt("StoredExperience", storedExperience);
         WriteView.ListAppender<PendingTrade> pending =
             view.getListAppender("PendingTrades", PendingTrade.CODEC);
         pendingTrades.forEach(pending::add);
@@ -510,6 +574,9 @@ public final class MerchantWorkerState {
         postDestroyed = view.getBoolean("PostDestroyed", false);
         observedDistance = view.getDouble("ObservedDistance", 0.0);
         noConvergenceTicks = view.getInt("NoConvergenceTicks", 0);
+        storedExperience = Math.max(0, view.getInt("StoredExperience", 0));
+        interactionDurationTicks = 0;
+        interactionElapsedTicks = 0;
         pendingTrades.clear();
         for (PendingTrade pending : view.getTypedListView("PendingTrades", PendingTrade.CODEC)) {
             if (pending.offerIndex() >= 0

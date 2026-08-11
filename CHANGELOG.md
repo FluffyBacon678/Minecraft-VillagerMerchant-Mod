@@ -2,6 +2,60 @@
 
 Notable user-facing changes to Merchant Villager are recorded here.
 
+## 1.1.0-rc.1 - 2026-08-09
+
+### Added
+
+- A global pre-approval catalogue built from safely previewable Minecraft
+  villager and Wandering Trader tables. Identical exact trades are grouped with
+  all known profession, level, biome-type, and pool providers; opaque custom
+  mod factories appear only after a real merchant safely exposes their offer.
+- Persistent Import and Export roles for face-touching chests. One logical
+  chest is dual-purpose; two or more receive stable distinct roles, and a
+  connected double chest still counts as one.
+- Automatic waxed role signs, periodic validation, and immediate player-break
+  rescans without ever selecting unrelated nearby storage.
+- Bounded approved-material intake from Import into the post's Trade Storage,
+  capped to a one-execution reserve and paused while cargo may need recovery.
+- Exact automated-trade XP capture, persistent internal XP storage, and
+  one-time XP release when the player interacts with the Merchant.
+- A randomized 3–10 second villager conversation per same-target visit before
+  the actual item swap, including mutual looking, ambient sounds, happy
+  particles, interruption recovery, and a target-level reservation.
+
+### Improved
+
+- Merchant Cargo is now a first-class part of the GUI; completed results have
+  a gold outline and remain there until Export accepts them. Its nine slots are
+  now server-authoritative and take-only, allowing players to retrieve carried
+  inputs or earned rewards before delivery.
+- Optional Mod Menu integration provides translated listing metadata, the
+  project icon, source/issues links, and Modrinth update checks without making
+  Mod Menu a required dependency.
+- Chest detection is structural and no longer incorrectly asks pathfinding to
+  reach the solid chest block.
+- The GUI distinguishes globally approved-but-absent trades as `Away`, shows
+  aggregated providers, stored XP, and the assigned Import/Export status.
+- Large catalogues use bounded baseline chunks followed by compact keyed row
+  deltas and entry-free worker telemetry instead of repeated full snapshots.
+- Legacy entity-specific approvals migrate to the equivalent global trade when
+  that live offer is next observed.
+
+### Reliability
+
+- XP is intercepted only for the synchronous automated trade; normal player
+  trading retains vanilla XP orbs.
+- Stored XP survives reloads and is safely released on death, lightning
+  conversion, or zombification.
+- Export removal/fullness preserves cargo and never falls back to player
+  storage outside the six directly touching blocks.
+- Destroying a post can no longer orphan an owned role sign when the sign's
+  chunk is unavailable; exact cleanup work persists at world scope until that
+  chunk is loaded.
+- Worker telemetry is packet-budgeted. Exceptionally component-heavy cargo is
+  summarized only in the read-only GUI preview; authoritative server cargo is
+  unchanged.
+
 ## 1.0.0 - 2026-08-02
 
 Initial release for Fabric on Minecraft 1.21.11.

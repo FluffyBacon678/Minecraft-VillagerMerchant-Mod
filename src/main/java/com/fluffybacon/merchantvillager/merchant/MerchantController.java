@@ -10,33 +10,44 @@ import com.fluffybacon.merchantvillager.trade.MeetHalfwayEvaluator;
 import com.fluffybacon.merchantvillager.trade.TargetMerchantAvailability;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.minecraft.block.entity.HopperBlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ai.brain.Activity;
+import net.minecraft.entity.ai.brain.EntityLookTarget;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
 import net.minecraft.entity.ai.brain.WalkTarget;
 import net.minecraft.entity.ai.pathing.Path;
 import net.minecraft.entity.passive.MerchantEntity;
 import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.passive.WanderingTraderEntity;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.GlobalPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.village.TradeOffer;
 
 public final class MerchantController {
+    private static final int REWARD_REVIEW_TICKS = 40;
+    private static final int DELIVERY_RECEIPT_TICKS = 100;
+
     public static void tick(ServerWorld world, VillagerEntity villager, MerchantWorkerState state) {
         boolean merchantProfession =
             villager.getVillagerData().profession().matchesKey(ModVillagerProfessions.MERCHANT_KEY);
         if (villager.isBaby()) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
             return;
         }
         if (state.postPos() != null && !state.isPostIn(world)) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
             stopMerchantNavigation(villager);
             state.status("Merchant is outside its assigned Merchant's Post dimension");
             return;
@@ -55,6 +66,7 @@ public final class MerchantController {
         }
         state.tickAge();
         if (mustYieldToVanillaSafety(villager)) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
             villager.getNavigation().stop();
             state.status(villager.isSleeping()
                 ? "Merchant sleeping"
@@ -63,6 +75,7 @@ public final class MerchantController {
         }
         MerchantPostBlockEntity post = resolveAndBindPost(world, villager, state);
         if (post == null) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
             recoverWithoutPost(world, villager, state);
             return;
         }
@@ -98,6 +111,9 @@ public final class MerchantController {
         } else if (!post.isPaused() && state.state() == MerchantState.PAUSED) {
             state.enter(MerchantState.IDLE, "Merchant idle");
         }
+        if (state.state() != MerchantState.TRADING_BUSY) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
+        }
 
         switch (state.state()) {
             case IDLE -> tickIdle(world, villager, state, post);
@@ -113,7 +129,9 @@ public final class MerchantController {
                 MerchantState.TRAVELLING_TO_TARGET, "Travelling to target merchant"
             );
             case TRAVELLING_TO_TARGET -> travelToTarget(world, villager, state, post);
+            case TRADING_BUSY -> tickTradingInteraction(world, villager, state, post);
             case EXECUTING_TRADES -> executeTrades(world, villager, state, post);
+            case REVIEWING_REWARDS -> reviewRewards(world, villager, state);
             case RETURNING_TO_POST -> returnToPost(world, villager, state, post);
             case RETURNING_UNUSED_INPUTS -> returnUnusedInputs(state, post);
             case FINDING_OUTPUT_CHEST -> findOutputChest(world, villager, state, post);
@@ -189,6 +207,8 @@ public final class MerchantController {
         }
         villager.getBrain().forget(MemoryModuleType.JOB_SITE);
         villager.getNavigation().setMaxFollowRange(0.0F);
+        AutomatedTradeExperience.releaseStoredExperience(world, villager, state);
+        SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
         ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
         state.clearPostAssignment(reason);
     }
@@ -208,7 +228,8 @@ public final class MerchantController {
 
     private static boolean ownsActiveReservation(MerchantWorkerState state) {
         return switch (state.state()) {
-            case COLLECTING_INPUTS, TRAVELLING_TO_TARGET, WAITING_FOR_TARGET, EXECUTING_TRADES -> true;
+            case COLLECTING_INPUTS, TRAVELLING_TO_TARGET, WAITING_FOR_TARGET,
+                TRADING_BUSY, EXECUTING_TRADES -> true;
             default -> false;
         };
     }
@@ -218,6 +239,9 @@ public final class MerchantController {
     ) {
         if (state.hasCargo()) {
             state.enter(MerchantState.RECOVERING, "Recovering unresolved cargo");
+            return;
+        }
+        if (state.status().startsWith("Delivered ") && state.stateTicks() < DELIVERY_RECEIPT_TICKS) {
             return;
         }
         long dayTime = world.getTimeOfDay() % 24000L;
@@ -271,15 +295,25 @@ public final class MerchantController {
                 .thenComparingDouble(OfferSnapshot::distanceSquared)
                 .thenComparing(OfferSnapshot::fingerprint))
             .toList();
-        OfferSnapshot selected = candidates.get(0);
-        Optional<BlockPos> chest = OutputChestFinder.find(
-            world, post.getPos(), List.of(selected.output()), villager
-        );
-        if (chest.isEmpty()) {
-            state.fail("No output chest found");
-            state.enter(MerchantState.IDLE, "No output chest found");
+        Inventory exportInventory = post.getExportInventory(world);
+        Optional<BlockPos> chest = post.getExportChestPos();
+        if (chest.isEmpty() || exportInventory == null) {
+            state.fail("No adjacent Export chest assigned");
+            state.enter(MerchantState.IDLE, "Waiting for adjacent Export chest");
             return;
         }
+        Optional<OfferSnapshot> selectedCandidate = candidates.stream()
+            .filter(offer -> OutputChestFinder.availableSpace(exportInventory, offer.output())
+                >= offer.output().getCount())
+            .findFirst();
+        if (selectedCandidate.isEmpty()) {
+            state.fail("Export chest is full");
+            state.enter(MerchantState.IDLE, "Waiting for Export chest space");
+            return;
+        }
+        OfferSnapshot selected = selectedCandidate.get();
+        state.clearFailure();
+        post.setLastFailure("");
         state.target(selected.targetUuid(), selected.offerIndex(), selected.fingerprint());
         post.advanceSelectionCursor(targetIndexes.get(selected.targetUuid()), targets.size());
         state.outputChest(chest.get());
@@ -413,9 +447,7 @@ public final class MerchantController {
             cancelBeforeReservation(state, "Target merchant unavailable");
             return;
         }
-        Inventory outputChest = state.outputChest() == null
-            ? null
-            : OutputChestFinder.touchingChestInventory(world, post.getPos(), state.outputChest());
+        Inventory outputChest = post.getExportInventory(world);
         Optional<MerchantWorkOrder> plan = MerchantBatchPlanner.plan(
             post,
             state,
@@ -440,9 +472,7 @@ public final class MerchantController {
             cancelBeforeReservation(state, "Offer changed before reservation");
             return;
         }
-        Inventory outputChest = state.outputChest() == null
-            ? null
-            : OutputChestFinder.touchingChestInventory(world, post.getPos(), state.outputChest());
+        Inventory outputChest = post.getExportInventory(world);
         Optional<MerchantWorkOrder> plan = MerchantBatchPlanner.plan(
             post,
             state,
@@ -500,7 +530,18 @@ public final class MerchantController {
         if (villager.squaredDistanceTo(target) <= MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED
             && MerchantTradeExecutor.hasInteractionLine(villager, target)) {
             stopMerchantNavigation(villager);
-            state.enter(MerchantState.EXECUTING_TRADES, "Trading with target merchant");
+            int range = MerchantVillagerConfig.MAX_TRADE_INTERACTION_TICKS
+                - MerchantVillagerConfig.MIN_TRADE_INTERACTION_TICKS + 1;
+            state.beginTradingInteraction(
+                MerchantVillagerConfig.MIN_TRADE_INTERACTION_TICKS
+                    + villager.getRandom().nextInt(range)
+            );
+            ReservationManager.renewWorker(world.getServer(), villager.getUuid(), world.getTime());
+            state.reservationExpiry(world.getTime() + MerchantVillagerConfig.RESERVATION_TIMEOUT);
+            state.enter(MerchantState.TRADING_BUSY, "Greeting target merchant");
+            if (!SocialTradeTargetLock.acquireOrRefresh(world, villager, target)) {
+                recover(state, "Target merchant is already in another social trade");
+            }
             return;
         }
         if (targetFromPost > MerchantVillagerConfig.NORMAL_RADIUS
@@ -520,6 +561,108 @@ public final class MerchantController {
             }
         }
         navigateToTarget(world, villager, target, state, post);
+    }
+
+    /**
+     * A real, bounded social beat before the inventory transaction. The cargo
+     * remains untouched throughout this state, so interruption can always
+     * return the exact reserved inputs.
+     */
+    private static void tickTradingInteraction(
+        ServerWorld world,
+        VillagerEntity villager,
+        MerchantWorkerState state,
+        MerchantPostBlockEntity post
+    ) {
+        MerchantEntity target = resolveTarget(world, state);
+        TradeOffer offer = resolveCurrentOffer(world, target, state);
+        if (target == null
+            || !target.isAlive()
+            || offer == null
+            || offer.isDisabled()
+            || !post.isEnabled(state.offerFingerprint())
+            || !TargetMerchantAvailability.canTradeNow(target)
+            || target.squaredDistanceTo(post.getPos().toCenterPos())
+                > MerchantVillagerConfig.EXTENDED_RADIUS * MerchantVillagerConfig.EXTENDED_RADIUS
+            || villager.squaredDistanceTo(target)
+                > MerchantVillagerConfig.INTERACTION_DISTANCE_SQUARED
+            || !MerchantTradeExecutor.hasInteractionLine(villager, target)
+            || (target instanceof VillagerEntity targetVillager
+                && mustYieldToVanillaSafety(targetVillager))) {
+            SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
+            recover(state, "Trade interaction was interrupted");
+            return;
+        }
+
+        if (!SocialTradeTargetLock.acquireOrRefresh(world, villager, target)) {
+            recover(state, "Target merchant is already in another social trade");
+            return;
+        }
+
+        stopMerchantNavigation(villager);
+        target.getNavigation().stop();
+        villager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+        villager.getBrain().forget(MemoryModuleType.PATH);
+        villager.getBrain().remember(
+            MemoryModuleType.LOOK_TARGET,
+            new EntityLookTarget(target, true),
+            3L
+        );
+        if (target instanceof VillagerEntity targetVillager) {
+            targetVillager.getBrain().forget(MemoryModuleType.WALK_TARGET);
+            targetVillager.getBrain().forget(MemoryModuleType.PATH);
+            targetVillager.getBrain().remember(
+                MemoryModuleType.LOOK_TARGET,
+                new EntityLookTarget(villager, true),
+                3L
+            );
+        }
+        villager.getLookControl().lookAt(target, 30.0F, 30.0F);
+        target.getLookControl().lookAt(villager, 30.0F, 30.0F);
+
+        int elapsed = state.interactionElapsedTicks();
+        if (elapsed == state.interactionDurationTicks() / 2) {
+            world.spawnParticles(
+                ParticleTypes.HAPPY_VILLAGER,
+                (villager.getX() + target.getX()) * 0.5,
+                Math.max(villager.getEyeY(), target.getEyeY()),
+                (villager.getZ() + target.getZ()) * 0.5,
+                5,
+                0.35,
+                0.25,
+                0.35,
+                0.02
+            );
+        }
+        if (elapsed % 50 == 10) {
+            world.playSound(
+                null,
+                target.getBlockPos(),
+                target instanceof WanderingTraderEntity
+                    ? SoundEvents.ENTITY_WANDERING_TRADER_AMBIENT
+                    : SoundEvents.ENTITY_VILLAGER_AMBIENT,
+                SoundCategory.NEUTRAL,
+                0.65F,
+                0.95F + world.getRandom().nextFloat() * 0.1F
+            );
+        }
+
+        if (!state.advanceTradingInteraction()) {
+            state.status("Merchants are discussing the trade");
+            return;
+        }
+        world.playSound(
+            null,
+            target.getBlockPos(),
+            target instanceof WanderingTraderEntity
+                ? SoundEvents.ENTITY_WANDERING_TRADER_YES
+                : SoundEvents.ENTITY_VILLAGER_YES,
+            SoundCategory.NEUTRAL,
+            0.8F,
+            1.0F
+        );
+        SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
+        state.enter(MerchantState.EXECUTING_TRADES, "Completing approved trade");
     }
 
     private static void executeTrades(
@@ -548,6 +691,9 @@ public final class MerchantController {
                 break;
             }
         }
+        if (state.completedExecutions() > completedBefore) {
+            post.notifyMaterialOrPermissionChange();
+        }
         TradeOffer current = resolveCurrentOffer(world, target, state);
         if (state.completedExecutions() >= state.plannedExecutions()
             || current == null
@@ -556,13 +702,44 @@ public final class MerchantController {
                 state.status("Continuing same-target approved batch");
             } else {
                 releaseReservation(world, villager, state);
-                state.enter(MerchantState.RETURNING_TO_POST, "Returning to Merchant's Post");
+                state.enter(
+                    MerchantState.REVIEWING_REWARDS,
+                    "Received " + summarizeRewards(state) + " — packing for Export"
+                );
             }
         } else if (state.completedExecutions() == completedBefore) {
             // A live-looking offer can still fail because its effective price
             // changed or the output no longer fits. Retrying every tick would
             // strand cargo forever, so return the exact unused inputs instead.
             recover(state, "Trade price or cargo capacity changed");
+        }
+    }
+
+    /** Keeps completed rewards visible in Merchant Cargo before the return trip. */
+    private static void reviewRewards(
+        ServerWorld world, VillagerEntity villager, MerchantWorkerState state
+    ) {
+        stopMerchantNavigation(villager);
+        state.status("Received " + summarizeRewards(state) + " — packing for Export");
+        if (state.stateTicks() % 10 == 1) {
+            world.spawnParticles(
+                ParticleTypes.HAPPY_VILLAGER,
+                villager.getX(),
+                villager.getBodyY(0.75),
+                villager.getZ(),
+                3,
+                0.25,
+                0.3,
+                0.25,
+                0.0
+            );
+        }
+        if (state.stateTicks() >= REWARD_REVIEW_TICKS) {
+            state.clearTarget();
+            state.enter(
+                MerchantState.RETURNING_TO_POST,
+                "Returning with " + summarizeRewards(state)
+            );
         }
     }
 
@@ -605,13 +782,19 @@ public final class MerchantController {
             return;
         }
         List<ItemStack> rewards = rewardStacks(state);
-        Optional<BlockPos> chest = OutputChestFinder.find(world, post.getPos(), rewards, villager);
-        if (chest.isEmpty()) {
-            state.enter(MerchantState.WAITING_FOR_OUTPUT_SPACE, "No output chest or output space");
+        Optional<BlockPos> chest = post.getExportChestPos();
+        Inventory exportInventory = post.getExportInventory(world);
+        if (chest.isEmpty() || exportInventory == null) {
+            state.enter(MerchantState.WAITING_FOR_OUTPUT_SPACE, "Waiting for adjacent Export chest");
+            return;
+        }
+        if (!OutputChestFinder.hasSpace(exportInventory, rewards)) {
+            state.enter(MerchantState.WAITING_FOR_OUTPUT_SPACE, "Export chest full");
             return;
         }
         state.outputChest(chest.get());
-        state.enter(MerchantState.TRAVELLING_TO_OUTPUT_CHEST, "Travelling to output chest");
+        state.clearFailure();
+        state.enter(MerchantState.TRAVELLING_TO_OUTPUT_CHEST, "Delivering rewards to Export chest");
     }
 
     private static void travelToOutputChest(
@@ -619,29 +802,32 @@ public final class MerchantController {
     ) {
         BlockPos chest = state.outputChest();
         if (chest == null
-            || OutputChestFinder.touchingChestInventory(world, post.getPos(), chest) == null) {
+            || post.getExportChestPos().filter(chest::equals).isEmpty()
+            || post.getExportInventory(world) == null) {
             stopMerchantNavigation(villager);
             state.enter(MerchantState.FINDING_OUTPUT_CHEST, "Output chest changed");
             return;
         }
-        if (villager.squaredDistanceTo(chest.toCenterPos()) <= 9.0) {
+        if (villager.squaredDistanceTo(post.getPos().toCenterPos()) <= 9.0) {
             stopMerchantNavigation(villager);
             state.enter(MerchantState.DEPOSITING_REWARDS, "Depositing trade rewards");
             return;
         }
-        navigate(villager, chest, state, "Output chest unreachable");
+        navigate(villager, post.getPos(), state, "Unable to reach Merchant's Post storage");
     }
 
     private static void depositRewards(
         ServerWorld world, VillagerEntity villager, MerchantWorkerState state, MerchantPostBlockEntity post
     ) {
         Inventory chest = state.outputChest() == null
+            || post.getExportChestPos().filter(state.outputChest()::equals).isEmpty()
             ? null
-            : OutputChestFinder.touchingChestInventory(world, post.getPos(), state.outputChest());
+            : post.getExportInventory(world);
         if (chest == null) {
             state.enter(MerchantState.FINDING_OUTPUT_CHEST, "Output chest removed");
             return;
         }
+        String delivered = summarizeRewards(state);
         for (int slot = 0; slot < state.cargo().size(); slot++) {
             if (state.isRewardSlot(slot) && !state.cargo().get(slot).isEmpty()) {
                 ItemStack remainder = HopperBlockEntity.transfer(null, chest, state.cargo().get(slot).copy(), null);
@@ -652,10 +838,16 @@ public final class MerchantController {
             }
         }
         chest.markDirty();
+        post.notifyMaterialOrPermissionChange();
         if (state.hasRewards()) {
             state.enter(MerchantState.WAITING_FOR_OUTPUT_SPACE, "Output chest full");
         } else {
-            finishJob(world, villager, state);
+            finishJob(
+                world,
+                villager,
+                state,
+                "Delivered " + delivered + " to Export chest"
+            );
         }
     }
 
@@ -674,10 +866,36 @@ public final class MerchantController {
     }
 
     private static void finishJob(ServerWorld world, VillagerEntity villager, MerchantWorkerState state) {
+        finishJob(world, villager, state, "Merchant idle");
+    }
+
+    private static void finishJob(
+        ServerWorld world,
+        VillagerEntity villager,
+        MerchantWorkerState state,
+        String status
+    ) {
         releaseReservation(world, villager, state);
         state.clearTarget();
         state.outputChest(null);
-        state.enter(MerchantState.IDLE, "Merchant idle");
+        state.clearFailure();
+        state.enter(MerchantState.IDLE, status);
+    }
+
+    private static String summarizeRewards(MerchantWorkerState state) {
+        Map<String, Integer> totals = new LinkedHashMap<>();
+        for (int slot = 0; slot < state.cargo().size(); slot++) {
+            ItemStack stack = state.cargo().get(slot);
+            if (state.isRewardSlot(slot) && !stack.isEmpty()) {
+                totals.merge(stack.getName().getString(), stack.getCount(), Integer::sum);
+            }
+        }
+        if (totals.isEmpty()) {
+            return "trade rewards";
+        }
+        return totals.entrySet().stream()
+            .map(entry -> entry.getValue() + " " + entry.getKey())
+            .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private static void recover(MerchantWorkerState state, String reason) {
@@ -1029,6 +1247,7 @@ public final class MerchantController {
     private static void releaseReservation(
         ServerWorld world, VillagerEntity villager, MerchantWorkerState state
     ) {
+        SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
         ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
         state.reservationExpiry(0L);
     }

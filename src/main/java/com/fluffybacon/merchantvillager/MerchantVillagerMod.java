@@ -1,6 +1,7 @@
 package com.fluffybacon.merchantvillager;
 
 import com.fluffybacon.merchantvillager.command.MerchantVillagerCommands;
+import com.fluffybacon.merchantvillager.inventory.StorageMarkerEvents;
 import com.fluffybacon.merchantvillager.merchant.MerchantInteractions;
 import com.fluffybacon.merchantvillager.network.ModPayloads;
 import com.fluffybacon.merchantvillager.registry.ModBlockEntities;
@@ -8,6 +9,7 @@ import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import com.fluffybacon.merchantvillager.registry.ModPointOfInterests;
 import com.fluffybacon.merchantvillager.registry.ModScreenHandlers;
 import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
+import com.fluffybacon.merchantvillager.trade.GlobalTradeCatalogueCache;
 import net.fabricmc.api.ModInitializer;
 import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
@@ -28,8 +30,10 @@ public final class MerchantVillagerMod implements ModInitializer {
         ModScreenHandlers.initialize();
         ModPointOfInterests.initialize();
         ModVillagerProfessions.initialize();
+        GlobalTradeCatalogueCache.initialize();
         ModPayloads.initializeServer();
         MerchantInteractions.initialize();
+        StorageMarkerEvents.initialize();
         MerchantVillagerCommands.initialize();
         LOGGER.info("Merchant Villager initialized");
     }

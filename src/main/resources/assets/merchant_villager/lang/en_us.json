@@ -13,8 +13,8 @@
   "merchant_villager.returning_unused_inputs": "Returning Unused Inputs",
   "merchant_villager.search": "Search",
   "merchant_villager.trades": "Available Trades",
-  "merchant_villager.backpack": "Merchant Backpack",
-  "merchant_villager.in_transit": "In Transit",
+  "merchant_villager.backpack": "Trade Storage",
+  "merchant_villager.in_transit": "Merchant Cargo",
   "merchant_villager.no_merchant": "No Merchant",
   "merchant_villager.loading_catalogue": "Loading catalogue...",
   "merchant_villager.tooltip.enabled": "V — Enabled. The Merchant may perform this exact trade.",
@@ -26,5 +26,8 @@
   "merchant_villager.tooltip.toggle_row": "Left-click this trade row to enable or disable it.",
   "merchant_villager.tooltip.ghost_deposit": "Left-click: cursor stack. Right-click: one. Shift-click: all matching inventory stacks.",
   "message.merchant_villager.no_assigned_post": "This Merchant has no assigned Merchant's Post.",
-  "message.merchant_villager.post_already_assigned": "The assigned Merchant's Post already has a Merchant."
+  "message.merchant_villager.post_already_assigned": "The assigned Merchant's Post already has a Merchant.",
+  "modmenu.nameTranslation.merchant_villager": "Merchant Villager",
+  "modmenu.summaryTranslation.merchant_villager": "A physical villager worker that performs approved trades and delivers the rewards.",
+  "modmenu.descriptionTranslation.merchant_villager": "Adds the Merchant profession and Merchant's Post: approve real villager and Wandering Trader offers, supply touching Import storage, and let a physical worker deliver rewards to Export storage."
 }

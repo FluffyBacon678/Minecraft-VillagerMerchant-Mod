@@ -27,7 +27,7 @@ public record DepositTradeMaterialPayload(
 
     private static void write(RegistryByteBuf buf, DepositTradeMaterialPayload payload) {
         BlockPos.PACKET_CODEC.encode(buf, payload.postPos);
-        buf.writeString(payload.fingerprint, 64);
+        buf.writeString(payload.fingerprint, 80);
         buf.writeByte(payload.inputIndex);
         buf.writeByte(payload.mode);
     }
@@ -35,7 +35,7 @@ public record DepositTradeMaterialPayload(
     private static DepositTradeMaterialPayload read(RegistryByteBuf buf) {
         return new DepositTradeMaterialPayload(
             BlockPos.PACKET_CODEC.decode(buf),
-            buf.readString(64),
+            buf.readString(80),
             buf.readUnsignedByte(),
             buf.readUnsignedByte()
         );

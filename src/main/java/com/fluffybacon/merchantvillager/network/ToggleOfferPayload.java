@@ -18,14 +18,14 @@ public record ToggleOfferPayload(BlockPos postPos, String fingerprint, boolean e
 
     private static void write(RegistryByteBuf buf, ToggleOfferPayload payload) {
         BlockPos.PACKET_CODEC.encode(buf, payload.postPos);
-        buf.writeString(payload.fingerprint, 64);
+        buf.writeString(payload.fingerprint, 80);
         buf.writeBoolean(payload.enabled);
     }
 
     private static ToggleOfferPayload read(RegistryByteBuf buf) {
         return new ToggleOfferPayload(
             BlockPos.PACKET_CODEC.decode(buf),
-            buf.readString(64),
+            buf.readString(80),
             buf.readBoolean()
         );
     }

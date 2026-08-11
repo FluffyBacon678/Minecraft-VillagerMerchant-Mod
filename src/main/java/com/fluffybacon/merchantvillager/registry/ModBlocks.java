@@ -2,6 +2,7 @@ package com.fluffybacon.merchantvillager.registry;
 
 import com.fluffybacon.merchantvillager.MerchantVillagerMod;
 import com.fluffybacon.merchantvillager.block.MerchantPostBlock;
+import com.fluffybacon.merchantvillager.block.ChestRoleMarkerBlock;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
@@ -19,11 +20,23 @@ public final class ModBlocks {
         RegistryKey.of(RegistryKeys.BLOCK, MerchantVillagerMod.id("merchant_post"));
     public static final RegistryKey<Item> MERCHANT_POST_ITEM_KEY =
         RegistryKey.of(RegistryKeys.ITEM, MerchantVillagerMod.id("merchant_post"));
+    public static final RegistryKey<Block> CHEST_ROLE_MARKER_KEY =
+        RegistryKey.of(RegistryKeys.BLOCK, MerchantVillagerMod.id("chest_role_marker"));
 
     public static final MerchantPostBlock MERCHANT_POST = Registry.register(
         Registries.BLOCK,
         MERCHANT_POST_KEY,
         new MerchantPostBlock(AbstractBlock.Settings.copy(Blocks.BARREL).registryKey(MERCHANT_POST_KEY))
+    );
+
+    public static final ChestRoleMarkerBlock CHEST_ROLE_MARKER = Registry.register(
+        Registries.BLOCK,
+        CHEST_ROLE_MARKER_KEY,
+        new ChestRoleMarkerBlock(
+            AbstractBlock.Settings.copy(Blocks.OAK_SIGN)
+                .registryKey(CHEST_ROLE_MARKER_KEY)
+                .dropsNothing()
+        )
     );
 
     public static final BlockItem MERCHANT_POST_ITEM = Registry.register(

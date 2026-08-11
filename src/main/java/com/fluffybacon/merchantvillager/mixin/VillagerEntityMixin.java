@@ -1,16 +1,22 @@
 package com.fluffybacon.merchantvillager.mixin;
 
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
+import com.fluffybacon.merchantvillager.merchant.AutomatedTradeExperience;
 import com.fluffybacon.merchantvillager.merchant.MerchantController;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.merchant.ReservationManager;
+import com.fluffybacon.merchantvillager.merchant.SocialTradeTargetLock;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.storage.ReadView;
 import net.minecraft.storage.WriteView;
+import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -69,6 +75,21 @@ public abstract class VillagerEntityMixin implements MerchantWorker {
         }
     }
 
+    @WrapOperation(
+        method = "afterUsing",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/World;spawnEntity(Lnet/minecraft/entity/Entity;)Z"
+        )
+    )
+    private boolean merchantVillager$storeAutomatedTradeExperience(
+        World world, Entity entity, Operation<Boolean> original
+    ) {
+        VillagerEntity villager = (VillagerEntity)(Object)this;
+        return AutomatedTradeExperience.storeCapturedExperience(villager, entity)
+            || original.call(world, entity);
+    }
+
     @Unique
     private void merchantVillager$settleDestructiveRemoval(
         ServerWorld world, VillagerEntity villager
@@ -79,6 +100,12 @@ public abstract class VillagerEntityMixin implements MerchantWorker {
             post.clearMerchant(villager.getUuid());
         }
         merchantVillager$state.dropCargoOnce(villager);
+        AutomatedTradeExperience.releaseStoredExperience(
+            world,
+            villager,
+            merchantVillager$state
+        );
+        SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
         ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
     }
 }

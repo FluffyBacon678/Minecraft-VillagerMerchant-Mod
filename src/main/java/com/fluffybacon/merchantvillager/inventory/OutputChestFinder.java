@@ -1,42 +1,42 @@
 package com.fluffybacon.merchantvillager.inventory;
 
-import java.util.Comparator;
 import java.util.Optional;
-import java.util.stream.Stream;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ChestBlock;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 
 public final class OutputChestFinder {
+    public static Optional<BlockPos> find(
+        ServerWorld world,
+        BlockPos postPos,
+        Iterable<ItemStack> rewards
+    ) {
+        return AdjacentChestManager.scan(world, postPos).stream()
+            .filter(candidate -> AdjacentChestManager.resolveInventory(world, postPos, candidate)
+                .filter(inventory -> hasSpace(inventory, rewards))
+                .isPresent())
+            .map(AdjacentChestManager.Candidate::accessPos)
+            .findFirst();
+    }
+
+    /**
+     * Compatibility overload for the existing controller. Chest validity is
+     * structural; the merchant's ability to path to a solid chest block no
+     * longer decides whether directly touching storage is safe to use.
+     */
     public static Optional<BlockPos> find(
         ServerWorld world,
         BlockPos postPos,
         Iterable<ItemStack> rewards,
         VillagerEntity merchant
     ) {
-        return Stream.of(Direction.values())
-            .map(postPos::offset)
-            .filter(candidate -> isTouchingPost(postPos, candidate))
-            .filter(world::isChunkLoaded)
-            .filter(candidate -> chestInventory(world, candidate) != null)
-            .filter(candidate -> hasSpace(chestInventory(world, candidate), rewards))
-            .filter(candidate -> {
-                var path = merchant.getNavigation().findPathTo(candidate, 1);
-                return path != null && path.reachesTarget();
-            })
-            .map(BlockPos::toImmutable)
-            .min(Comparator
-                .comparingDouble((BlockPos candidate) -> candidate.getSquaredDistance(postPos))
-                .thenComparingLong(BlockPos::asLong));
+        return find(world, postPos, rewards);
     }
 
     public static boolean isTouchingPost(BlockPos postPos, BlockPos chestPos) {
-        return postPos.getManhattanDistance(chestPos) == 1;
+        return AdjacentChestManager.isDirectFaceNeighbor(postPos, chestPos);
     }
 
     public static Inventory touchingChestInventory(
@@ -68,14 +68,7 @@ public final class OutputChestFinder {
     }
 
     public static Inventory chestInventory(ServerWorld world, BlockPos pos) {
-        if (!world.isChunkLoaded(pos)) {
-            return null;
-        }
-        BlockState state = world.getBlockState(pos);
-        if (!(state.getBlock() instanceof ChestBlock chest)) {
-            return null;
-        }
-        return ChestBlock.getInventory(chest, state, world, pos, true);
+        return AdjacentChestManager.chestInventory(world, pos);
     }
 
     public static boolean hasSpace(Inventory inventory, Iterable<ItemStack> stacks) {

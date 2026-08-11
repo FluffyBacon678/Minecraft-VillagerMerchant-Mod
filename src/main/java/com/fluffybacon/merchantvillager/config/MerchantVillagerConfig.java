@@ -19,6 +19,8 @@ public final class MerchantVillagerConfig {
     public static final int UNREACHABLE_COOLDOWN = 20 * 30;
     public static final int OUTPUT_CHEST_RETRY_INTERVAL = 40;
     public static final int TARGET_BUSY_TIMEOUT = 20 * 15;
+    public static final int MIN_TRADE_INTERACTION_TICKS = 20 * 3;
+    public static final int MAX_TRADE_INTERACTION_TICKS = 20 * 10;
     public static final boolean NEW_OFFERS_ENABLED = false;
     public static final double INTERACTION_DISTANCE_SQUARED = 16.0;
 

@@ -1,9 +1,11 @@
 package com.fluffybacon.merchantvillager.mixin;
 
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
+import com.fluffybacon.merchantvillager.merchant.AutomatedTradeExperience;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.merchant.ReservationManager;
+import com.fluffybacon.merchantvillager.merchant.SocialTradeTargetLock;
 import net.minecraft.entity.mob.ZombieEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -35,6 +37,8 @@ public abstract class ZombieEntityMixin {
             post.clearMerchant(villager.getUuid());
         }
         state.dropCargoOnce(villager);
+        AutomatedTradeExperience.releaseStoredExperience(world, villager, state);
+        SocialTradeTargetLock.releaseWorker(world.getServer(), villager.getUuid());
         ReservationManager.releaseWorker(world.getServer(), villager.getUuid());
     }
 }

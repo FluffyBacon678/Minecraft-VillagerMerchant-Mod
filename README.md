@@ -5,9 +5,12 @@ virtual menus. One physical Merchant Villager operates one Merchant's Post,
 visits the real villager or Wandering Trader that owns an offer, performs the
 trade, and carries the result back.
 
-The post catalogues offers from real, currently loaded merchants in range.
-Every newly discovered offer starts disabled until a player explicitly enables
-it.
+The post safely pre-indexes Minecraft's villager profession tables and
+Wandering Trader pools. Players can approve those trades before a matching
+merchant arrives; identical exact trades from multiple providers share one
+catalogue row and one approval. Fabric exposes arbitrary modded trades only as
+executable factory code, so opaque custom factories are never run speculatively;
+their exact trades appear safely after a real merchant exposes the offer.
 
 ## Requirements
 
@@ -16,6 +19,7 @@ it.
 - Fabric API 0.141.6+1.21.11 or newer
 - Java 21
 - The mod and Fabric API installed on the server and every joining client
+- Optional: Mod Menu for translated listing metadata and update notifications
 
 For single-player, install both Merchant Villager and Fabric API in the
 instance's `mods` folder. For multiplayer, install the same compatible mod
@@ -30,30 +34,44 @@ version on the dedicated server and on each client.
 ## Gameplay
 
 Craft a Merchant's Post from a barrel, bell, and emerald, place it near an
-unemployed adult villager, and place a chest directly against any face of the
+unemployed adult villager, and place one or two chests directly against the
 post. Open the post (or interact with its assigned Merchant) to approve offers
-and insert matching trade materials into the shared 27-slot inventory.
+and insert matching trade materials into its 27-slot Trade Storage.
 
 Only a chest block that shares a face with the post is accepted. Diagonal
 chests, chests separated by a gap, and unrelated nearby player storage are
 ignored. A connected double chest works when at least one half shares a face
 with the post.
 
-The catalogue supports text search, readiness/permission/stock/profession
+One adjacent chest is marked for both Import and Export. With two or more,
+stable, distinct Import and Export roles are chosen and marked by waxed signs;
+extra chests are ignored. Breaking a marker or assigned chest causes a safe
+rescan. Import stages only a bounded one-execution reserve of approved inputs
+in Trade Storage and pauses while worker cargo may need recovery; excess stock
+stays in the chest. Completed rewards go only to Export.
+
+The global catalogue supports text search, readiness/permission/stock/profession
 filters, multiple sort orders, click-anywhere trade toggles, clear gray disabled
 rows, and a server-authoritative Disable All action. The right side presents
-the post's 27-slot Merchant Backpack, the player's inventory, live worker
-details, and all nine read-only in-transit cargo slots. Ghost inputs provide
+the post's 27-slot Trade Storage, the player's inventory, live worker
+details, and all nine live Merchant Cargo slots. Players may click, split, or
+shift-click carried inputs and earned rewards out before delivery; Cargo is
+take-only, so items cannot be inserted there. Gold cargo outlines mark
+completed trade results that are waiting for Export. Ghost inputs provide
 convenient deposits: left-click moves the matching cursor stack, right-click
 moves one, and shift-click moves all matching stacks from the player inventory.
 
 The server moves an exact trade batch into the Merchant's nine cargo slots.
-The Merchant walks to the real target, performs that target's real offer at
-interaction distance, returns to the post, and deposits the rewards into the
-touching chest.
-Several approved offers at one target can share the same physical visit.
+The Merchant walks to the real target, spends a randomized 3–10 seconds facing
+and conversing with it once per same-target visit, performs the visit's approved
+offer uses at interaction distance, returns to the post, and deposits the
+rewards into Export. Vanilla trade XP is held internally instead of littering
+the ground, then released when the player interacts with the Merchant. Several
+approved offers at one target can share that physical visit and conversation.
 Hover the live status line for worker health, distance, cargo, work-order
 progress, current target, output chest, and last-failure details.
+If unusually large custom item components exceed telemetry summary limits, the
+real synchronized Cargo slots still preserve and display the exact server items.
 
 Targets through 55 blocks are normal. Targets farther than 55 and no farther
 than 66 blocks must make measurable progress toward the post during a 20-tick
@@ -62,10 +80,10 @@ tether.
 
 ## Storage safety and recovery
 
-The Merchant never searches arbitrary storage around the post. If no touching
-chest can accept the expected rewards, work waits instead of selecting another
-nearby chest. Keep free space in the touching chest before enabling large
-batches.
+The Merchant never searches arbitrary storage around the post. If its assigned
+Export cannot accept the expected rewards, work waits with the result in
+Merchant Cargo instead of selecting another nearby chest. Keep free space in
+Export before enabling large batches.
 
 On an unload or restart, serialized in-flight cargo is conservatively routed
 through recovery rather than blindly reissuing an uncertain offer use. Inputs

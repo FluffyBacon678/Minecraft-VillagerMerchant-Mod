@@ -79,10 +79,17 @@ tasks.register("verifyReleaseJar") {
     dependsOn tasks.named("remapJar")
 
     def releaseJar = tasks.named("remapJar").flatMap { it.archiveFile }
+    def modrinthThumbnail = layout.projectDirectory.file(
+        "art/merchant-villager-project-thumbnail-v2.png"
+    )
     inputs.file(releaseJar)
+    inputs.file(modrinthThumbnail)
 
     doLast {
         def requiredEntries = [
+            "com/fluffybacon/merchantvillager/MerchantVillagerMod.class",
+            "com/fluffybacon/merchantvillager/client/MerchantVillagerClient.class",
+            "merchant_villager.mixins.json",
             "assets/merchant_villager/icon.png",
             "assets/merchant_villager/textures/entity/villager/profession/merchant.png",
             "assets/merchant_villager/textures/entity/zombie_villager/profession/merchant.png"
@@ -115,8 +122,24 @@ tasks.register("verifyReleaseJar") {
             if (metadata.entrypoints?."fabric-gametest" || metadata.entrypoints?."fabric-client-gametest") {
                 throw new GradleException("Release fabric.mod.json contains GameTest entrypoints")
             }
+            if (metadata.version != project.version.toString()) {
+                throw new GradleException("Release metadata version ${metadata.version} does not match ${project.version}")
+            }
+            if (metadata.suggests?.modmenu != "*"
+                || metadata.custom?.modmenu?.update_checker != true) {
+                throw new GradleException("Release metadata is missing optional Mod Menu integration")
+            }
         } finally {
             zip.close()
+        }
+
+        def thumbnailFile = modrinthThumbnail.asFile
+        if (thumbnailFile.length() > 256 * 1024) {
+            throw new GradleException("Modrinth thumbnail exceeds 256 KiB: ${thumbnailFile.length()} bytes")
+        }
+        def thumbnail = javax.imageio.ImageIO.read(thumbnailFile)
+        if (thumbnail == null || thumbnail.width != 256 || thumbnail.height != 256) {
+            throw new GradleException("Modrinth thumbnail must be a readable 256x256 image")
         }
     }
 }

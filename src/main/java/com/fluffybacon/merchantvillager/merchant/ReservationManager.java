@@ -36,8 +36,10 @@ public final class ReservationManager {
         Map<Key, Reservation> reservations = RESERVATIONS.computeIfAbsent(server, ignored -> new HashMap<>());
         reservations.values().removeIf(reservation -> reservation.expiry() <= now);
         for (Request request : requests) {
-            Reservation existing = reservations.get(new Key(request.target(), request.fingerprint()));
-            if (existing != null && !existing.worker().equals(worker)) {
+            boolean targetOwnedByAnotherWorker = reservations.entrySet().stream()
+                .anyMatch(entry -> entry.getKey().target().equals(request.target())
+                    && !entry.getValue().worker().equals(worker));
+            if (targetOwnedByAnotherWorker) {
                 return false;
             }
         }
@@ -52,6 +54,32 @@ public final class ReservationManager {
             );
         }
         return true;
+    }
+
+    /**
+     * Extends every lease held by a worker while the two merchants perform
+     * their visible interaction. The target-level lock prevents a second
+     * Merchant from starting another offer on the same villager meanwhile.
+     */
+    public static synchronized int renewWorker(MinecraftServer server, UUID worker, long now) {
+        Map<Key, Reservation> reservations = RESERVATIONS.get(server);
+        if (reservations == null) {
+            return 0;
+        }
+        reservations.values().removeIf(reservation -> reservation.expiry() <= now);
+        int renewed = 0;
+        for (Map.Entry<Key, Reservation> entry : reservations.entrySet()) {
+            Reservation reservation = entry.getValue();
+            if (reservation.worker().equals(worker)) {
+                entry.setValue(new Reservation(
+                    worker,
+                    reservation.planned(),
+                    now + MerchantVillagerConfig.RESERVATION_TIMEOUT
+                ));
+                renewed++;
+            }
+        }
+        return renewed;
     }
 
     public static synchronized void release(

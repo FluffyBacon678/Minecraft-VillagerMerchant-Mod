@@ -13,8 +13,12 @@ import net.minecraft.util.math.BlockPos;
 
 public final class MerchantPostScreenHandler extends ScreenHandler {
     private static final int POST_SLOT_COUNT = 27;
+    public static final int CARGO_SLOT_COUNT = 9;
+    private static final int PLAYER_SLOT_START = POST_SLOT_COUNT + CARGO_SLOT_COUNT;
     public static final int STORAGE_X = 153;
     public static final int STORAGE_Y = 34;
+    public static final int CARGO_X = STORAGE_X;
+    public static final int CARGO_Y = 91;
     public static final int PLAYER_INVENTORY_Y = 158;
     public static final int HOTBAR_Y = 216;
     private final Inventory postInventory;
@@ -23,14 +27,26 @@ public final class MerchantPostScreenHandler extends ScreenHandler {
     public MerchantPostScreenHandler(
         int syncId, PlayerInventory playerInventory, BlockPos postPos
     ) {
-        this(syncId, playerInventory, new SimpleInventory(POST_SLOT_COUNT), postPos);
+        this(
+            syncId,
+            playerInventory,
+            new SimpleInventory(POST_SLOT_COUNT),
+            new SimpleInventory(CARGO_SLOT_COUNT),
+            postPos
+        );
     }
 
     public MerchantPostScreenHandler(int syncId, PlayerInventory playerInventory, MerchantPostBlockEntity post) {
-        this(syncId, playerInventory, post, post.getPos());
+        this(syncId, playerInventory, post, new MerchantCargoInventory(post), post.getPos());
     }
 
-    private MerchantPostScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory, BlockPos postPos) {
+    private MerchantPostScreenHandler(
+        int syncId,
+        PlayerInventory playerInventory,
+        Inventory inventory,
+        Inventory cargoInventory,
+        BlockPos postPos
+    ) {
         super(ModScreenHandlers.MERCHANT_POST, syncId);
         checkSize(inventory, POST_SLOT_COUNT);
         this.postInventory = inventory;
@@ -45,6 +61,21 @@ public final class MerchantPostScreenHandler extends ScreenHandler {
                     STORAGE_X + column * 18,
                     STORAGE_Y + row * 18
                 ));
+            }
+        }
+        for (int row = 0; row < 3; row++) {
+            for (int column = 0; column < 3; column++) {
+                addSlot(new Slot(
+                    cargoInventory,
+                    column + row * 3,
+                    CARGO_X + column * 18,
+                    CARGO_Y + row * 18
+                ) {
+                    @Override
+                    public boolean canInsert(ItemStack stack) {
+                        return false;
+                    }
+                });
             }
         }
         for (int row = 0; row < 3; row++) {
@@ -79,8 +110,8 @@ public final class MerchantPostScreenHandler extends ScreenHandler {
         }
         ItemStack stack = slot.getStack();
         ItemStack original = stack.copy();
-        if (slotIndex < POST_SLOT_COUNT) {
-            if (!insertItem(stack, POST_SLOT_COUNT, slots.size(), true)) {
+        if (slotIndex < PLAYER_SLOT_START) {
+            if (!insertItem(stack, PLAYER_SLOT_START, slots.size(), true)) {
                 return ItemStack.EMPTY;
             }
         } else {

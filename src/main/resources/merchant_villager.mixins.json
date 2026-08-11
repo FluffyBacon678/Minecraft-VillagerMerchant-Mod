@@ -3,7 +3,16 @@
   "package": "com.fluffybacon.merchantvillager.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "AbstractBlockStateMixin",
+    "DeterministicVanillaTradeFactory",
+    "ProcessItemFactoryAccessor",
+    "RandomizedVanillaTradeFactory",
+    "SellMapFactoryAccessor",
+    "SellItemFactoryAccessor",
+    "TypedWrapperFactoryAccessor",
+    "MobEntityMixin",
     "VillagerEntityMixin",
+    "WanderingTraderEntityMixin",
     "ZombieEntityMixin"
   ],
   "injectors": {

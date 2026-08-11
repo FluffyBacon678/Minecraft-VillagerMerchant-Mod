@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.ChestBlockEntity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ExperienceOrbEntity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.SpawnReason;
@@ -68,6 +69,7 @@ public final class MerchantRecoveryGameTest {
         MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
         state.bindPost(context.getWorld(), context.getAbsolutePos(postPos));
         context.assertTrue(state.add(new ItemStack(Items.EMERALD, 2), true), "Reward cargo must load");
+        state.addStoredExperience(3);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         post.assignMerchant(worker.getUuid());
         BlockPos deathPos = worker.getBlockPos();
@@ -77,6 +79,8 @@ public final class MerchantRecoveryGameTest {
             context.assertEquals(2, droppedCount(context, deathPos, Items.EMERALD), "Death drops exact rewards once");
             context.assertTrue(post.getAssignedMerchant().isEmpty(), "Death clears the post assignment");
             context.assertFalse(state.hasCargo(), "Dropped death cargo must be cleared from persisted state");
+            context.assertEquals(0, state.storedExperience(), "Death must drain stored XP");
+            context.assertEquals(3, droppedExperience(context, deathPos), "Death must release stored XP once");
             context.complete();
         });
     }
@@ -89,6 +93,7 @@ public final class MerchantRecoveryGameTest {
         VillagerEntity worker = spawnVillager(context, new BlockPos(2, 1, 1));
         MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
         state.bindPost(context.getWorld(), context.getAbsolutePos(postPos));
+        state.addStoredExperience(3);
         context.assertTrue(
             state.loadInputs(java.util.List.of(new ItemStack(Items.PAPER, 3))),
             "Lightning regression must start with exact input cargo"
@@ -119,6 +124,7 @@ public final class MerchantRecoveryGameTest {
         context.runAtTick(2, () -> {
             context.assertTrue(worker.isRemoved(), "Successful lightning conversion must discard the villager");
             context.assertFalse(state.hasCargo(), "Dropped conversion cargo must be cleared");
+            context.assertEquals(0, state.storedExperience(), "Conversion must drain stored XP");
             context.assertTrue(post.getAssignedMerchant().isEmpty(), "Conversion must clear the post assignment");
             context.assertEquals(
                 0,
@@ -131,6 +137,11 @@ public final class MerchantRecoveryGameTest {
                 3,
                 droppedCount(context, conversionPos, Items.PAPER),
                 "Lightning conversion must drop exact cargo once"
+            );
+            context.assertEquals(
+                3,
+                droppedExperience(context, conversionPos),
+                "Lightning conversion must release stored XP once"
             );
             context.complete();
         });
@@ -182,7 +193,9 @@ public final class MerchantRecoveryGameTest {
         context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
         context.setBlockState(chestPos, Blocks.CHEST);
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, y, 2));
-        VillagerEntity target = targetWithPaperOffer(context, new BlockPos(12, y, 2), 8);
+        VillagerEntity target = targetWithOffer(
+            context, new BlockPos(12, y, 2), 8, Items.SPIDER_EYE, Items.STRING
+        );
         worker.setCanPickUpLoot(false);
         target.setCanPickUpLoot(false);
         prepareWorker(context, worker, postPos);
@@ -196,7 +209,7 @@ public final class MerchantRecoveryGameTest {
             .orElseThrow()
             .fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
-        post.setStack(0, new ItemStack(Items.PAPER, 3));
+        post.setStack(0, new ItemStack(Items.SPIDER_EYE, 3));
         MerchantWorkerState workerState = ((MerchantWorker)worker).merchantVillager$getState();
         boolean[] destroyed = {false};
         context.runAtEveryTick(() -> {
@@ -210,7 +223,7 @@ public final class MerchantRecoveryGameTest {
                 context.assertEquals(0, offer.getUses(), "Post destruction before arrival must execute no trade");
                 context.assertEquals(
                     3,
-                    droppedCount(context, context.getAbsolutePos(postPos), Items.PAPER),
+                    droppedCount(context, context.getAbsolutePos(postPos), Items.SPIDER_EYE),
                     "Reserved inputs must drop once near the former post"
                 );
                 context.complete();
@@ -228,7 +241,9 @@ public final class MerchantRecoveryGameTest {
         context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
         context.setBlockState(originalChest, Blocks.CHEST);
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, y, 2));
-        VillagerEntity target = targetWithPaperOffer(context, new BlockPos(7, y, 2), 8);
+        VillagerEntity target = targetWithOffer(
+            context, new BlockPos(7, y, 2), 8, Items.CLAY_BALL, Items.BRICK
+        );
         prepareWorker(context, worker, postPos);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         post.assignMerchant(worker.getUuid());
@@ -240,7 +255,7 @@ public final class MerchantRecoveryGameTest {
             .orElseThrow()
             .fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
-        post.setStack(0, new ItemStack(Items.PAPER, 3));
+        post.setStack(0, new ItemStack(Items.CLAY_BALL, 3));
         MerchantWorkerState workerState = ((MerchantWorker)worker).merchantVillager$getState();
         boolean[] removed = {false};
         boolean[] observedWaiting = {false};
@@ -263,7 +278,7 @@ public final class MerchantRecoveryGameTest {
             context.assertEquals(3, offer.getUses(), "Completed trades must not repeat during chest recovery");
             context.assertEquals(
                 3,
-                context.getBlockEntity(replacementChest, ChestBlockEntity.class).count(Items.EMERALD),
+                context.getBlockEntity(replacementChest, ChestBlockEntity.class).count(Items.BRICK),
                 "Replacement chest must receive all retained rewards"
             );
             context.assertFalse(workerState.hasCargo(), "Cargo must clear only after successful deposit");
@@ -293,7 +308,9 @@ public final class MerchantRecoveryGameTest {
         context.setBlockState(secondChestPos, Blocks.CHEST);
         VillagerEntity firstWorker = spawnVillager(context, new BlockPos(1, y, 2));
         VillagerEntity secondWorker = spawnVillager(context, new BlockPos(20, y, 2));
-        VillagerEntity target = targetWithPaperOffer(context, new BlockPos(10, y, 2), 4);
+        VillagerEntity target = targetWithOffer(
+            context, new BlockPos(10, y, 2), 4, Items.FLINT, Items.IRON_NUGGET
+        );
         prepareWorker(context, firstWorker, firstPostPos);
         prepareWorker(context, secondWorker, secondPostPos);
 
@@ -317,8 +334,8 @@ public final class MerchantRecoveryGameTest {
             .fingerprint();
         firstPost.setOfferEnabledInternal(firstFingerprint, true);
         secondPost.setOfferEnabledInternal(secondFingerprint, true);
-        firstPost.setStack(0, new ItemStack(Items.PAPER, 3));
-        secondPost.setStack(0, new ItemStack(Items.PAPER, 3));
+        firstPost.setStack(0, new ItemStack(Items.FLINT, 3));
+        secondPost.setStack(0, new ItemStack(Items.FLINT, 3));
         TradeOffer offer = target.getOffers().getFirst();
 
         context.runAtTick(1200, () -> {
@@ -331,22 +348,22 @@ public final class MerchantRecoveryGameTest {
                 ((MerchantWorker)firstWorker).merchantVillager$getState();
             MerchantWorkerState secondState =
                 ((MerchantWorker)secondWorker).merchantVillager$getState();
-            int rewards = context.getBlockEntity(firstChestPos, ChestBlockEntity.class).count(Items.EMERALD)
-                + context.getBlockEntity(secondChestPos, ChestBlockEntity.class).count(Items.EMERALD);
-            int unusedInputs = firstPost.count(Items.PAPER) + secondPost.count(Items.PAPER);
+            int rewards = context.getBlockEntity(firstChestPos, ChestBlockEntity.class).count(Items.IRON_NUGGET)
+                + context.getBlockEntity(secondChestPos, ChestBlockEntity.class).count(Items.IRON_NUGGET);
+            int unusedInputs = firstPost.count(Items.FLINT) + secondPost.count(Items.FLINT);
             String diagnostics = " (first=" + firstState.state() + "/" + firstState.status()
                 + ", firstFailure=" + firstState.lastFailure()
                 + ", firstTicks=" + firstState.stateTicks()
                 + ", firstProfession=" + firstWorker.getVillagerData().profession().getIdAsString()
                 + ", firstActivity=" + firstWorker.getBrain().getFirstPossibleNonCoreActivity()
-                + ", firstPostPaper=" + firstPost.count(Items.PAPER)
+                + ", firstPostFlint=" + firstPost.count(Items.FLINT)
                 + ", firstCargo=" + firstState.cargo()
                 + ", second=" + secondState.state() + "/" + secondState.status()
                 + ", secondFailure=" + secondState.lastFailure()
                 + ", secondTicks=" + secondState.stateTicks()
                 + ", secondProfession=" + secondWorker.getVillagerData().profession().getIdAsString()
                 + ", secondActivity=" + secondWorker.getBrain().getFirstPossibleNonCoreActivity()
-                + ", secondPostPaper=" + secondPost.count(Items.PAPER)
+                + ", secondPostFlint=" + secondPost.count(Items.FLINT)
                 + ", secondCargo=" + secondState.cargo()
                 + ", firstAssigned=" + firstPost.getAssignedMerchant()
                 + ", secondAssigned=" + secondPost.getAssignedMerchant()
@@ -377,17 +394,17 @@ public final class MerchantRecoveryGameTest {
         });
     }
 
-    private static VillagerEntity targetWithPaperOffer(
-        TestContext context, BlockPos position, int maxUses
+    private static VillagerEntity targetWithOffer(
+        TestContext context, BlockPos position, int maxUses, Item input, Item output
     ) {
         VillagerEntity target = spawnVillager(context, position);
         target.setAiDisabled(true);
         target.getBrain().doExclusively(Activity.IDLE);
         target.getOffers().clear();
         target.getOffers().add(new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(input, 1),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(output),
             maxUses,
             1,
             0.05F
@@ -455,5 +472,13 @@ public final class MerchantRecoveryGameTest {
             new Box(center).expand(5.0),
             entity -> entity.getStack().isOf(item)
         ).stream().mapToInt(entity -> entity.getStack().getCount()).sum();
+    }
+
+    private static int droppedExperience(TestContext context, BlockPos center) {
+        return context.getWorld().getEntitiesByClass(
+            ExperienceOrbEntity.class,
+            new Box(center).expand(5.0),
+            entity -> true
+        ).stream().mapToInt(ExperienceOrbEntity::getValue).sum();
     }
 }

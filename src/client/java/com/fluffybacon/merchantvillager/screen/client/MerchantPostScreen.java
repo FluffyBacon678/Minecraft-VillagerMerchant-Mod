@@ -37,8 +37,8 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private static final int SECOND_INPUT_X = 34;
     private static final int OUTPUT_X = 68;
     private static final int TOGGLE_X = 118;
-    private static final int CARGO_X = MerchantPostScreenHandler.STORAGE_X;
-    private static final int CARGO_Y = 91;
+    private static final int CARGO_X = MerchantPostScreenHandler.CARGO_X;
+    private static final int CARGO_Y = MerchantPostScreenHandler.CARGO_Y;
     private int page;
     private int filterIndex;
     private SortMode sortMode = SortMode.READY;
@@ -136,7 +136,6 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         super.render(context, mouseX, mouseY, deltaTicks);
         renderOfferTooltips(context, mouseX, mouseY);
-        renderCargoTooltip(context, mouseX, mouseY);
         renderStatusTooltip(context, mouseX, mouseY);
         drawMouseoverTooltip(context, mouseX, mouseY);
     }
@@ -332,25 +331,30 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         );
         context.drawText(
             textRenderer,
-            Text.literal("Trip " + stats.completedExecutions() + "/" + stats.plannedExecutions()),
+            fitText(
+                "Trip " + stats.completedExecutions() + "/" + stats.plannedExecutions()
+                    + "  XP " + stats.storedExperience(),
+                98
+            ),
             left,
             y + 127,
             color,
             false
         );
-        drawCargo(context, stats.cargo());
+        drawCargoRewardHighlights(context, stats.rewardSlotMask());
     }
 
-    private void drawCargo(DrawContext context, List<ItemStack> cargo) {
-        for (int index = 0; index < 9; index++) {
-            ItemStack stack = index < cargo.size() ? cargo.get(index) : ItemStack.EMPTY;
-            if (stack.isEmpty()) {
+    private void drawCargoRewardHighlights(DrawContext context, int rewardSlotMask) {
+        for (int index = 0; index < MerchantPostScreenHandler.CARGO_SLOT_COUNT; index++) {
+            if ((rewardSlotMask & 1 << index) == 0) {
                 continue;
             }
             int itemX = x + CARGO_X + index % 3 * 18;
             int itemY = y + CARGO_Y + index / 3 * 18;
-            context.drawItem(stack, itemX, itemY);
-            context.drawStackOverlay(textRenderer, stack, itemX, itemY);
+            context.fill(itemX - 1, itemY - 1, itemX + 17, itemY, 0xFFFFD45A);
+            context.fill(itemX - 1, itemY + 16, itemX + 17, itemY + 17, 0xFFFFD45A);
+            context.fill(itemX - 1, itemY, itemX, itemY + 16, 0xFFFFD45A);
+            context.fill(itemX + 16, itemY, itemX + 17, itemY + 16, 0xFFFFD45A);
         }
     }
 
@@ -608,37 +612,55 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 TRADE_WIDTH,
                 TRADE_ROW_HEIGHT
             )) {
-                List<Text> details = new ArrayList<>();
-                details.add(Text.literal(entry.offer().targetName()));
-                details.add(Text.literal("Distance: " + formatDistance(entry.offer().distanceSquared()) + " blocks"));
-                details.add(Text.literal("Uses: " + entry.offer().uses() + "/" + entry.offer().maxUses()));
-                details.add(Text.literal("Status: " + availability(entry)));
-                details.add(Text.literal(
+                List<net.minecraft.text.OrderedText> details = new ArrayList<>();
+                addWrappedTooltipLine(
+                    details,
+                    Text.literal("Providers: " + entry.offer().targetName())
+                );
+                if (Double.isFinite(entry.offer().distanceSquared())) {
+                    addWrappedTooltipLine(details, Text.literal(
+                        "Nearest: " + formatDistance(entry.offer().distanceSquared()) + " blocks"
+                    ));
+                } else {
+                    addWrappedTooltipLine(
+                        details, Text.literal("No matching merchant is currently nearby")
+                    );
+                }
+                addWrappedTooltipLine(details, Text.literal(
+                    "Uses: " + entry.offer().uses() + "/" + entry.offer().maxUses()
+                ));
+                addWrappedTooltipLine(details, Text.literal("Status: " + availability(entry)));
+                addWrappedTooltipLine(details, Text.literal(
                     "Stored: " + entry.storedFirstCount()
                         + (entry.offer().secondInput().isPresent()
                             ? " + " + entry.storedSecondCount()
                             : "")
                 ));
-                details.add(Text.literal("Fundable: " + entry.fundableExecutions()));
+                addWrappedTooltipLine(
+                    details, Text.literal("Fundable: " + entry.fundableExecutions())
+                );
                 if (entry.selected()) {
-                    details.add(Text.literal("Reserved in the current work order"));
+                    addWrappedTooltipLine(
+                        details, Text.literal("Reserved in the current work order")
+                    );
                 }
                 if (entry.coolingDown()) {
-                    details.add(Text.literal("Target is on an unreachable-path cooldown"));
+                    addWrappedTooltipLine(
+                        details, Text.literal("Target is on an unreachable-path cooldown")
+                    );
                 }
                 if (entry.offer().wanderingTrader() && entry.offer().despawnDelay() >= 0) {
-                    details.add(Text.literal(
+                    addWrappedTooltipLine(details, Text.literal(
                         "Despawns in: " + (entry.offer().despawnDelay() / 20) + "s"
                     ));
                 }
-                details.add(Text.translatable("merchant_villager.tooltip.toggle_row"));
-                details.add(Text.translatable("merchant_villager.tooltip.ghost_deposit"));
-                context.drawTooltip(
-                    textRenderer,
-                    details,
-                    mouseX,
-                    mouseY
+                addWrappedTooltipLine(
+                    details, Text.translatable("merchant_villager.tooltip.toggle_row")
                 );
+                addWrappedTooltipLine(
+                    details, Text.translatable("merchant_villager.tooltip.ghost_deposit")
+                );
+                context.drawOrderedTooltip(textRenderer, details, mouseX, mouseY);
             }
         }
     }
@@ -654,7 +676,19 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             int itemX = x + CARGO_X + index % 3 * 18;
             int itemY = y + CARGO_Y + index / 3 * 18;
             if (!stack.isEmpty() && inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
-                context.drawItemTooltip(textRenderer, stack, mouseX, mouseY);
+                List<Text> tooltip = new ArrayList<>();
+                tooltip.add(stack.getName());
+                if ((payload.workerStats().get().rewardSlotMask() & 1 << index) != 0) {
+                    tooltip.add(Text.literal("Trade result — waiting for Export").formatted(Formatting.GOLD));
+                } else {
+                    tooltip.add(Text.literal("Reserved trade input").formatted(Formatting.GRAY));
+                }
+                if (payload.workerStats().get().cargoSummarized()) {
+                    tooltip.add(Text.literal(
+                        "Large item components are hidden in this read-only preview"
+                    ).formatted(Formatting.DARK_GRAY));
+                }
+                context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
                 return;
             }
         }
@@ -679,14 +713,22 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 "Work order: " + stats.completedExecutions() + "/" + stats.plannedExecutions()
             ));
             addWrappedTooltipLine(lines, Text.literal(
+                "Stored XP: " + stats.storedExperience() + " (interact to collect)"
+            ));
+            addWrappedTooltipLine(lines, Text.literal(
                 "Target: " + stats.targetUuid()
                     .map(uuid -> targetName(payload, uuid))
                     .orElse("none")
             ));
             addWrappedTooltipLine(lines, Text.literal(
-                "Output chest: " + stats.outputChest()
+                "Import chest: " + stats.importChest()
+                    .map(pos -> pos.toShortString())
+                    .orElse("not assigned")
+            ));
+            addWrappedTooltipLine(lines, Text.literal(
+                "Export chest: " + stats.outputChest()
                     .map(pos -> pos.toShortString() + " \u2014 " + stats.outputChestStatus())
-                    .orElse("not selected")
+                    .orElse(stats.outputChestStatus())
             ));
             List<ItemStack> cargo = stats.cargo().stream().filter(stack -> !stack.isEmpty()).toList();
             if (cargo.isEmpty()) {
@@ -699,6 +741,14 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                         Text.literal("  " + stack.getCount() + " " + stack.getName().getString())
                     );
                 }
+            }
+            if (stats.cargoSummarized()) {
+                addWrappedTooltipLine(
+                    lines,
+                    Text.literal(
+                        "Cargo preview omits oversized item components; server cargo remains exact"
+                    ).formatted(Formatting.DARK_GRAY)
+                );
             }
         });
         if (!payload.lastFailure().isBlank()) {
@@ -825,33 +875,33 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     }
 
     private static String availability(CataloguePayload.Entry entry) {
+        if (!entry.enabled()) {
+            return "Disabled";
+        }
         if (entry.offer().isOutOfStock()) {
             return "Out";
         }
         if (!entry.offer().targetAvailable()) {
-            return "Busy";
+            return "Awaiting merchant";
         }
         if (entry.coolingDown()) {
             return "Unreachable";
-        }
-        if (!entry.enabled()) {
-            return "Disabled";
         }
         return entry.fundableExecutions() > 0 ? "Ready " + entry.fundableExecutions() : "Missing";
     }
 
     private static String compactAvailability(CataloguePayload.Entry entry) {
+        if (!entry.enabled()) {
+            return "Off";
+        }
         if (entry.offer().isOutOfStock()) {
             return "Out";
         }
         if (!entry.offer().targetAvailable()) {
-            return "Busy";
+            return "Away";
         }
         if (entry.coolingDown()) {
             return "Path";
-        }
-        if (!entry.enabled()) {
-            return "Off";
         }
         return entry.fundableExecutions() > 0 ? "×" + entry.fundableExecutions() : "Miss";
     }
@@ -867,14 +917,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private static String targetDisplayLabel(
         CataloguePayload payload, CataloguePayload.Entry selected
     ) {
-        List<java.util.UUID> professionTargets = payload.entries().stream()
-            .filter(entry -> entry.offer().profession().equals(selected.offer().profession()))
-            .map(entry -> entry.offer().targetUuid())
-            .distinct()
-            .sorted()
-            .toList();
-        int ordinal = professionTargets.indexOf(selected.offer().targetUuid()) + 1;
-        return displayProfession(selected.offer().profession()) + " #" + Math.max(1, ordinal);
+        return selected.offer().targetName();
     }
 
     private static String displayProfession(String profession) {

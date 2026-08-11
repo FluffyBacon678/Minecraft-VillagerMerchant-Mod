@@ -59,8 +59,13 @@ public final class MerchantTradeExecutor {
         }
 
         // MerchantEntity#trade is the real vanilla hook: one use increment,
-        // demand/experience handling, and no player advancement without a customer.
-        target.trade(offer);
+        // demand/career-XP handling, and no player advancement without a customer.
+        // Its player-XP orb is captured narrowly for this synchronous automated call.
+        AutomatedTradeExperience.captureDuringTrade(
+            target,
+            state,
+            () -> target.trade(offer)
+        );
         state.completeExecution();
         return true;
     }

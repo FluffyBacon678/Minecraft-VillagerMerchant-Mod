@@ -8,6 +8,7 @@ import com.fluffybacon.merchantvillager.merchant.MerchantTradeExecutor;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
 import com.fluffybacon.merchantvillager.merchant.MerchantState;
+import com.fluffybacon.merchantvillager.merchant.SocialTradeTargetLock;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import com.fluffybacon.merchantvillager.registry.ModPointOfInterests;
 import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
@@ -40,6 +41,101 @@ import net.minecraft.village.TradeOffer;
 import net.minecraft.village.TradedItem;
 
 public final class MerchantTradingGameTest {
+    @GameTest
+    public void socialTargetLockSelfReleasesWhenWorkerDisappears(TestContext context) {
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 1));
+        VillagerEntity target = spawnVillager(context, new BlockPos(2, 1, 1));
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        state.target(target.getUuid(), 0, "");
+        state.enter(MerchantState.TRADING_BUSY, "Testing orphaned social lock");
+
+        context.assertTrue(
+            SocialTradeTargetLock.acquireOrRefresh(context.getWorld(), worker, target),
+            "Regression setup must acquire the target-side social lock"
+        );
+        worker.discard();
+        SocialTradeTargetLock.enforce(context.getWorld(), target);
+
+        context.assertFalse(
+            SocialTradeTargetLock.isLockedBy(
+                context.getWorld().getServer(), target.getUuid(), worker.getUuid()
+            ),
+            "A disappearing worker must not leave a stale target lock"
+        );
+        context.assertFalse(target.isAiDisabled(), "An orphaned social lock must never persist NoAI");
+        context.complete();
+    }
+
+    @GameTest(maxTicks = 100)
+    public void tradingBusyWaitsBeforeCompletingTheInventorySwap(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(postPos.east(), Blocks.CHEST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(2, 1, 2));
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(
+            new TradedItem(Items.PAPER),
+            Optional.empty(),
+            new ItemStack(Items.EMERALD),
+            8,
+            1,
+            0.05F
+        );
+        target.getOffers().add(offer);
+        prepareWorker(context, worker, postPos);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        var snapshot = post.getOffers().stream()
+            .filter(candidate -> candidate.targetUuid().equals(target.getUuid()))
+            .findFirst()
+            .orElseThrow();
+        post.setOfferEnabledInternal(snapshot.fingerprint(), true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        context.assertTrue(state.add(new ItemStack(Items.PAPER), false), "Input cargo must load");
+        state.target(target.getUuid(), snapshot.offerIndex(), snapshot.fingerprint());
+        state.plannedExecutions(1);
+        state.beginTradingInteraction(MerchantVillagerConfig.MIN_TRADE_INTERACTION_TICKS);
+        state.enter(MerchantState.TRADING_BUSY, "Testing social trade phase");
+        Vec3d targetStart = target.getEntityPos();
+        target.getNavigation().startMovingTo(
+            target.getX() + 3.0, target.getY(), target.getZ(), 1.0
+        );
+        target.setVelocity(0.35, 0.0, 0.0);
+
+        context.runAtTick(20, () -> {
+            context.assertEquals(0, offer.getUses(), "No item swap may occur during the greeting");
+            context.assertEquals(MerchantState.TRADING_BUSY, state.state(), "Greeting must remain active");
+            context.assertTrue(worker.getNavigation().isIdle(), "Merchant must stop and face the target");
+            context.assertTrue(target.getNavigation().isIdle(), "Normal target AI must remain held");
+            context.assertFalse(target.isAiDisabled(), "Social holding must never toggle persistent NoAI");
+            context.assertTrue(
+                SocialTradeTargetLock.isLockedBy(
+                    context.getWorld().getServer(), target.getUuid(), worker.getUuid()
+                ),
+                "The target must carry the worker's short-lived social lock"
+            );
+            context.assertTrue(
+                target.getEntityPos().squaredDistanceTo(targetStart) < 0.5,
+                "A target whose normal AI tried to walk away must remain at the conversation"
+            );
+        });
+
+        context.runAtTick(70, () -> {
+            context.assertEquals(1, offer.getUses(), "The real offer must execute after the greeting");
+            context.assertFalse(target.isAiDisabled(), "Completing a trade must leave target AI enabled");
+            context.assertFalse(
+                SocialTradeTargetLock.isLockedBy(
+                    context.getWorld().getServer(), target.getUuid(), worker.getUuid()
+                ),
+                "Completing a trade must release the target-side social lock"
+            );
+            context.complete();
+        });
+    }
+
     @GameTest
     public void savedRemoteChestIsRejectedBeforeDeposit(TestContext context) {
         createFloor(context);
@@ -89,12 +185,16 @@ public final class MerchantTradingGameTest {
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            // Keep this signature unique across the shared GameTest world.
+            // Global approval is intentionally keyed by exact trade rather
+            // than fixture UUID, so a duplicate from another nearby test
+            // could otherwise make that fixture consume these materials.
+            new TradedItem(Items.NAUTILUS_SHELL, 1),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
-            8,
-            1,
-            0.05F
+            new ItemStack(Items.DRAGON_BREATH),
+            7,
+            3,
+            0.07F
         );
         target.getOffers().add(offer);
         prepareWorker(context, worker, postPos);
@@ -155,9 +255,9 @@ public final class MerchantTradingGameTest {
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(Items.POISONOUS_POTATO, 17),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(Items.DRAGON_BREATH),
             2,
             1,
             0.05F
@@ -173,7 +273,7 @@ public final class MerchantTradingGameTest {
             .orElseThrow()
             .fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
-        post.setStack(0, new ItemStack(Items.PAPER));
+        post.setStack(0, new ItemStack(Items.POISONOUS_POTATO, 17));
 
         context.runAtTick(500, () -> {
             Inventory combined = OutputChestFinder.chestInventory(
@@ -182,17 +282,17 @@ public final class MerchantTradingGameTest {
             );
             context.assertEquals(54, combined.size(), "Touching double chest must expose all 54 slots");
             context.assertEquals(1, offer.getUses(), "Trade must execute through the touching chest half");
-            context.assertEquals(1, combined.count(Items.EMERALD), "Reward must use the connected empty half");
+            context.assertEquals(1, combined.count(Items.DRAGON_BREATH), "Reward must use the connected empty half");
             context.assertEquals(
                 0,
-                touchingInventory.count(Items.EMERALD),
+                touchingInventory.count(Items.DRAGON_BREATH),
                 "The deliberately full touching half cannot accept the reward"
             );
             context.complete();
         });
     }
 
-    @GameTest(maxTicks = 600, skyAccess = true)
+    @GameTest(maxTicks = 1100, skyAccess = true)
     public void physicalPaperTradesDeliverEmeraldsToTouchingChest(TestContext context) {
         for (int x = 0; x <= 7; x++) {
             for (int z = 0; z <= 5; z++) {
@@ -246,8 +346,20 @@ public final class MerchantTradingGameTest {
         String fingerprint = targetOffers.getFirst().fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
         post.setStack(0, new ItemStack(Items.PAPER, 3));
+        boolean[] sawVisibleRewardReview = {false};
+        boolean[] sawDeliveryReceipt = {false};
+        context.runAtEveryTick(() -> {
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            if (state.state() == MerchantState.REVIEWING_REWARDS
+                && state.cargo().stream().anyMatch(stack -> stack.isOf(Items.EMERALD))) {
+                sawVisibleRewardReview[0] = true;
+            }
+            if (state.status().startsWith("Delivered 3 Emerald")) {
+                sawDeliveryReceipt[0] = true;
+            }
+        });
 
-        context.runAtTick(500, () -> {
+        context.runAtTick(1000, () -> {
             ChestBlockEntity chest = context.getBlockEntity(chestRelative, ChestBlockEntity.class);
             var state = ((MerchantWorker)worker).merchantVillager$getState();
             String diagnostics = "state=" + state.state()
@@ -273,6 +385,14 @@ public final class MerchantTradingGameTest {
             context.assertFalse(
                 state.hasCargo(),
                 "Worker cargo must be empty after delivery"
+            );
+            context.assertTrue(
+                sawVisibleRewardReview[0],
+                "Completed emeralds must remain visibly in Merchant Cargo before delivery"
+            );
+            context.assertTrue(
+                sawDeliveryReceipt[0],
+                "Idle telemetry must show a visible Export delivery receipt before resuming work"
             );
             context.complete();
         });
@@ -398,9 +518,9 @@ public final class MerchantTradingGameTest {
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(Items.BLAZE_POWDER, 11),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(Items.GHAST_TEAR),
             8,
             1,
             0.05F
@@ -420,13 +540,13 @@ public final class MerchantTradingGameTest {
             post.isEnabled(fingerprint),
             "Newly discovered offers must default to X"
         );
-        post.setStack(0, new ItemStack(Items.PAPER, 3));
+        post.setStack(0, new ItemStack(Items.BLAZE_POWDER, 33));
 
         context.runAtTick(250, () -> {
             ChestBlockEntity chest = context.getBlockEntity(chestPos, ChestBlockEntity.class);
-            context.assertEquals(0, chest.count(Items.EMERALD), "Disabled trade must create no reward");
+            context.assertEquals(0, chest.count(Items.GHAST_TEAR), "Disabled trade must create no reward");
             context.assertEquals(0, offer.getUses(), "Disabled trade must not increment uses");
-            context.assertEquals(3, post.count(Items.PAPER), "Disabled trade must not consume materials");
+            context.assertEquals(33, post.count(Items.BLAZE_POWDER), "Disabled trade must not consume materials");
             context.complete();
         });
     }
@@ -443,9 +563,9 @@ public final class MerchantTradingGameTest {
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(Items.FERMENTED_SPIDER_EYE, 13),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(Items.PHANTOM_MEMBRANE),
             1,
             1,
             0.05F
@@ -462,14 +582,14 @@ public final class MerchantTradingGameTest {
             .orElseThrow()
             .fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
-        post.setStack(0, new ItemStack(Items.PAPER, 3));
+        post.setStack(0, new ItemStack(Items.FERMENTED_SPIDER_EYE, 39));
 
         context.runAtTick(250, () -> {
             context.assertEquals(1, offer.getUses(), "Out-of-stock offer use count must not change");
-            context.assertEquals(3, post.count(Items.PAPER), "Out-of-stock offer must consume no material");
+            context.assertEquals(39, post.count(Items.FERMENTED_SPIDER_EYE), "Out-of-stock offer must consume no material");
             context.assertEquals(
                 0,
-                context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.EMERALD),
+                context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.PHANTOM_MEMBRANE),
                 "Out-of-stock offer must create no reward"
             );
             context.complete();
@@ -488,9 +608,9 @@ public final class MerchantTradingGameTest {
         target.setAiDisabled(true);
         target.getOffers().clear();
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(Items.PRISMARINE_CRYSTALS, 1),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(Items.SHULKER_SHELL),
             2,
             1,
             0.05F
@@ -507,14 +627,14 @@ public final class MerchantTradingGameTest {
             .orElseThrow()
             .fingerprint();
         post.setOfferEnabledInternal(fingerprint, true);
-        post.setStack(0, new ItemStack(Items.PAPER, 2));
+        post.setStack(0, new ItemStack(Items.PRISMARINE_CRYSTALS, 2));
 
         context.runAtTick(450, () -> {
             context.assertEquals(2, offer.getUses(), "Only the final available use must execute");
-            context.assertEquals(1, post.count(Items.PAPER), "Unused reserved input must return to the post");
+            context.assertEquals(1, post.count(Items.PRISMARINE_CRYSTALS), "Unused reserved input must return to the post");
             context.assertEquals(
                 1,
-                context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.EMERALD),
+                context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.SHULKER_SHELL),
                 "The last available use must produce exactly one reward"
             );
             context.complete();
@@ -615,6 +735,81 @@ public final class MerchantTradingGameTest {
             context.assertFalse(
                 ((MerchantWorker)worker).merchantVillager$getState().hasCargo(),
                 "Worker must not reserve cargo without a valid output chest"
+            );
+            context.complete();
+        });
+    }
+
+    @GameTest(maxTicks = 600, skyAccess = true)
+    public void blockedPreferredOutputDoesNotStarveAnotherFittingTrade(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        BlockPos chestPos = postPos.east();
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(chestPos, Blocks.CHEST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(5, 1, 2));
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer paper = new TradeOffer(
+            new TradedItem(Items.MAGMA_CREAM),
+            Optional.empty(),
+            new ItemStack(Items.ENDER_PEARL),
+            8,
+            1,
+            0.05F
+        );
+        TradeOffer wheat = new TradeOffer(
+            new TradedItem(Items.RABBIT_FOOT),
+            Optional.empty(),
+            new ItemStack(Items.GLOWSTONE_DUST, 2),
+            8,
+            1,
+            0.05F
+        );
+        target.getOffers().add(paper);
+        target.getOffers().add(wheat);
+        prepareWorker(context, worker, postPos);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        var snapshots = post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .sorted(java.util.Comparator.comparing(snapshot -> snapshot.fingerprint()))
+            .toList();
+        context.assertEquals(2, snapshots.size(), "Both candidate trades must be discovered");
+        snapshots.forEach(snapshot -> post.setOfferEnabledInternal(snapshot.fingerprint(), true));
+
+        var blocked = snapshots.get(0);
+        var fitting = snapshots.get(1);
+        TradeOffer blockedOffer = target.getOffers().get(blocked.offerIndex());
+        TradeOffer fittingOffer = target.getOffers().get(fitting.offerIndex());
+        ChestBlockEntity chest = context.getBlockEntity(chestPos, ChestBlockEntity.class);
+        for (int slot = 0; slot < chest.size(); slot++) {
+            chest.setStack(slot, new ItemStack(Items.COBBLESTONE, 64));
+        }
+        ItemStack fittingOutput = fitting.output();
+        chest.setStack(
+            0,
+            fittingOutput.copyWithCount(fittingOutput.getMaxCount() - fittingOutput.getCount())
+        );
+        post.setStack(0, new ItemStack(Items.MAGMA_CREAM));
+        post.setStack(1, new ItemStack(Items.RABBIT_FOOT));
+
+        context.runAtTick(500, () -> {
+            context.assertEquals(
+                0,
+                blockedOffer.getUses(),
+                "The output with no compatible space must remain unexecuted"
+            );
+            context.assertEquals(
+                1,
+                fittingOffer.getUses(),
+                "A later approved offer that fits Export must still execute"
+            );
+            context.assertFalse(
+                ((MerchantWorker)worker).merchantVillager$getState().hasCargo(),
+                "The fitting reward must finish delivery"
             );
             context.complete();
         });
@@ -799,7 +994,7 @@ public final class MerchantTradingGameTest {
                         .findFirst()
                         .ifPresent(snapshot -> {
                             post.setOfferEnabledInternal(snapshot.fingerprint(), true);
-                            post.setStack(0, new ItemStack(Items.PAPER, 2));
+                            post.setStack(0, new ItemStack(Items.NAUTILUS_SHELL, 2));
                             configured[0] = true;
                         });
                 }
@@ -813,7 +1008,11 @@ public final class MerchantTradingGameTest {
                     extendedDiscoveryFailure(context, postPos, target, post)
                 );
                 context.assertEquals(0, offer.getUses(), "Stationary 55-to-66-block target must not be pursued");
-                context.assertEquals(2, post.count(Items.PAPER), "Rejected extended target must reserve no inputs");
+                context.assertEquals(
+                    2,
+                    post.count(Items.NAUTILUS_SHELL),
+                    "Rejected extended target must reserve no inputs"
+                );
                 context.assertFalse(
                     ((MerchantWorker)worker).merchantVillager$getState().hasCargo(),
                     "Rejected convergence must leave worker cargo empty"
@@ -850,13 +1049,18 @@ public final class MerchantTradingGameTest {
         );
         target.setAiDisabled(true);
         target.getOffers().clear();
+        // This movement regression runs beside dozens of other GameTests.
+        // Use an exact signature unique to this fixture: global pre-approval
+        // intentionally enables every matching live villager, so the common
+        // paper-for-emerald offer can make this worker visit a neighboring
+        // fixture before its extended target.
         TradeOffer offer = new TradeOffer(
-            new TradedItem(Items.PAPER, 1),
+            new TradedItem(Items.AMETHYST_SHARD, 1),
             Optional.empty(),
-            new ItemStack(Items.EMERALD),
+            new ItemStack(Items.HEART_OF_THE_SEA),
             2,
-            1,
-            0.05F
+            7,
+            0.03125F
         );
         target.getOffers().add(offer);
         prepareWorker(context, worker, postPos);
@@ -921,7 +1125,7 @@ public final class MerchantTradingGameTest {
                         .findFirst()
                         .ifPresent(snapshot -> {
                             post.setOfferEnabledInternal(snapshot.fingerprint(), true);
-                            post.setStack(0, new ItemStack(Items.PAPER));
+                            post.setStack(0, new ItemStack(Items.AMETHYST_SHARD));
                             configured[0] = true;
                             movementStart[0] = context.getTick();
                         });
@@ -970,7 +1174,7 @@ public final class MerchantTradingGameTest {
                     target.squaredDistanceTo(context.getAbsolutePos(postPos).toCenterPos())
                 )
                 + ", maxWorkerDistance=" + maximumWorkerDistance[0]
-                + ", postPaper=" + post.count(Items.PAPER)
+                + ", postInput=" + post.count(Items.AMETHYST_SHARD)
                 + ", cargo=" + state.cargo()
                 + ", available="
                 + com.fluffybacon.merchantvillager.trade.TargetMerchantAvailability.canTradeNow(target)
@@ -992,7 +1196,7 @@ public final class MerchantTradingGameTest {
                 );
                 context.assertEquals(
                     1,
-                    context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.EMERALD),
+                    context.getBlockEntity(chestPos, ChestBlockEntity.class).count(Items.HEART_OF_THE_SEA),
                     "Extended target reward must return to the output chest" + diagnostics
                 );
                 context.assertTrue(

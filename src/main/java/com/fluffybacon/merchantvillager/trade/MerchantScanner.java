@@ -21,7 +21,8 @@ public final class MerchantScanner {
         List<MerchantEntity> targets = world.getEntitiesByClass(
             MerchantEntity.class,
             box,
-            target -> target.isAlive()
+            target -> (target instanceof VillagerEntity || target instanceof WanderingTraderEntity)
+                && target.isAlive()
                 && !target.isRemoved()
                 && target.squaredDistanceTo(postPos.toCenterPos()) <= radius * radius
                 && (!(target instanceof VillagerEntity villager)

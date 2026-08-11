@@ -11,6 +11,7 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ExperienceOrbEntity;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.brain.Activity;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
@@ -119,6 +120,7 @@ public final class MerchantProfessionGameTest {
         VillagerEntity worker = prepareAssignedMerchant(context, postPos);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         MerchantWorkerState workerState = ((MerchantWorker)worker).merchantVillager$getState();
+        workerState.addStoredExperience(7);
 
         worker.setVillagerData(worker.getVillagerData().withProfession(
             context.getWorld().getRegistryManager(),
@@ -128,6 +130,8 @@ public final class MerchantProfessionGameTest {
 
         context.assertTrue(post.getAssignedMerchant().isEmpty(), "Profession loss must release the post assignment");
         context.assertTrue(workerState.postPos() == null, "Profession loss must clear the cached post position");
+        context.assertEquals(0, workerState.storedExperience(), "Profession loss must drain stored XP");
+        context.assertEquals(7, releasedExperience(context, worker), "Profession loss must release stored XP once");
         assertPostCanBeReservedAgain(context, postPos);
         context.complete();
     }
@@ -140,12 +144,15 @@ public final class MerchantProfessionGameTest {
         VillagerEntity worker = prepareAssignedMerchant(context, postPos);
         MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
         MerchantWorkerState workerState = ((MerchantWorker)worker).merchantVillager$getState();
+        workerState.addStoredExperience(11);
 
         worker.getBrain().forget(MemoryModuleType.JOB_SITE);
         MerchantController.tick(context.getWorld(), worker, workerState);
 
         context.assertTrue(post.getAssignedMerchant().isEmpty(), "Job-site loss must release the post assignment");
         context.assertTrue(workerState.postPos() == null, "Job-site loss must clear the cached post position");
+        context.assertEquals(0, workerState.storedExperience(), "Job-site loss must drain stored XP");
+        context.assertEquals(11, releasedExperience(context, worker), "Job-site loss must release stored XP once");
         assertPostCanBeReservedAgain(context, postPos);
         context.complete();
     }
@@ -326,5 +333,13 @@ public final class MerchantProfessionGameTest {
             reservation.filter(absolutePost::equals).isPresent(),
             "Released Merchant's Post POI must be immediately reservable"
         );
+    }
+
+    private static int releasedExperience(TestContext context, VillagerEntity worker) {
+        return context.getWorld().getEntitiesByClass(
+            ExperienceOrbEntity.class,
+            worker.getBoundingBox().expand(2.0),
+            orb -> true
+        ).stream().mapToInt(ExperienceOrbEntity::getValue).sum();
     }
 }

@@ -14,16 +14,30 @@ import net.minecraft.util.math.GlobalPos;
 public final class MerchantInteractions {
     public static void initialize() {
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (!(entity instanceof VillagerEntity villager)
-                || !villager.getVillagerData().profession().matchesKey(ModVillagerProfessions.MERCHANT_KEY)) {
+            if (!(entity instanceof VillagerEntity villager)) {
                 return ActionResult.PASS;
             }
+            boolean merchantProfession = villager.getVillagerData().profession()
+                .matchesKey(ModVillagerProfessions.MERCHANT_KEY);
             if (world.isClient()) {
-                return ActionResult.SUCCESS;
+                return merchantProfession ? ActionResult.SUCCESS : ActionResult.PASS;
             }
             ServerPlayerEntity serverPlayer = (ServerPlayerEntity)player;
             if (!serverPlayer.canInteractWithEntity(villager, 4.0)) {
-                return ActionResult.FAIL;
+                return merchantProfession ? ActionResult.FAIL : ActionResult.PASS;
+            }
+            MerchantWorkerState workerState =
+                ((MerchantWorker)villager).merchantVillager$getState();
+            AutomatedTradeExperience.releaseStoredExperience(
+                (ServerWorld)world,
+                villager,
+                workerState
+            );
+            // A former Merchant may have lost its job site/profession before a
+            // player could collect. Release any carried XP, then preserve that
+            // villager's normal vanilla interaction instead of opening our UI.
+            if (!merchantProfession) {
+                return ActionResult.PASS;
             }
             MerchantPostBlockEntity post = resolvePost((ServerWorld)world, villager);
             if (post == null) {
