@@ -17,7 +17,7 @@ the installed Prism instance.
 
 | ID | Scenario | Result | Evidence / notes |
 |---|---|---|---|
-| A01 | Java/unit tests | **PASS** | 56/56, zero failures/errors/skips |
+| A01 | Java/unit tests | **PASS** | 57/57, zero failures/errors/skips; exact 64x64 profession UV mask and isolated five-shade cloth palette covered |
 | A02 | Full server gameplay suite | **PASS** | 55/55 required GameTests |
 | A03 | Repeat server suite for randomized travel/social timing | **PASS** | 55/55 repeat after interactive-cargo coverage; isolated stationary-boundary fixture also passed 3/3 after test-signature isolation |
 | A04 | Real Merchant Post client-screen GameTest | **PASS** | Real renderer/network/cache/UI run succeeded; screenshot hash matches tracked release image |
@@ -28,7 +28,7 @@ the installed Prism instance.
 | A09 | Interactive Merchant Cargo | **PASS** | Cargo is nine real server-authoritative take-only slots; exact partial input and full reward withdrawals clear the correct physical stacks/flags without duplication; real client screen render passed |
 
 Final RC artifact: `merchant-villager-1.1.0-rc.1.jar`
-SHA-256: `DAC54B33F472A7E7E994551C308F9921DF5F84E7694EB3E77A78EDAF1F161CE4`
+SHA-256: `200F24069E0BE8055AFD9C3F58B3B8C216B8C54C35532182D0A670F6022022F4`
 
 ## Manual Prism smoke scenarios
 
@@ -130,3 +130,17 @@ cases.
 - Validation: 55/55 server GameTests PASS, real client GUI GameTest PASS, unit
   suite/release verifier/build PASS. Updated installed artifact SHA-256:
   `DAC54B33F472A7E7E994551C308F9921DF5F84E7694EB3E77A78EDAF1F161CE4`.
+
+### 2026-08-12 base clothing polish
+
+- Refined the Merchant's burgundy cap and coat, split cream lapels and sleeves,
+  fitted walnut apron with two pockets, coat tails, cuffs, gold trim, emerald
+  clasp, satchel, chain, and account ledger.
+- The five-shade burgundy cloth ramp is now isolated from every permanent
+  material, ready for a later clothing-only dye system. This build does not
+  yet add dye interaction, saved colors, or alternate rendered palettes.
+- Exact vanilla UV-mask validation passed with 1,888 expected opaque pixels and
+  no pixels leaking onto skin or unused model regions. Unit tests 57/57, server
+  GameTests 55/55, release build, and real client GameTest all pass.
+- Updated artifact SHA-256:
+  `200F24069E0BE8055AFD9C3F58B3B8C216B8C54C35532182D0A670F6022022F4`.

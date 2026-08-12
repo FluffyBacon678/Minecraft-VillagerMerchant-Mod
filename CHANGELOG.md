@@ -25,6 +25,11 @@ Notable user-facing changes to Merchant Villager are recorded here.
 
 ### Improved
 
+- The Merchant's base outfit has cleaner cap shading, split lapels, cream
+  sleeves, fitted apron pockets, coat tails, cuffs, satchel, clasp, chain, and
+  ledger details. Its burgundy cloth now uses an isolated dye-ready palette;
+  dye interaction and saved colors are intentionally reserved for a later
+  update.
 - Merchant Cargo is now a first-class part of the GUI; completed results have
   a gold outline and remain there until Export accepts them. Its nine slots are
   now server-authoritative and take-only, allowing players to retrieve carried

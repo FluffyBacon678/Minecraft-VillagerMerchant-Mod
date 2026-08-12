@@ -129,6 +129,14 @@ tasks.register("verifyReleaseJar") {
                 || metadata.custom?.modmenu?.update_checker != true) {
                 throw new GradleException("Release metadata is missing optional Mod Menu integration")
             }
+
+            def merchantTextureEntry = zip.getEntry(
+                "assets/merchant_villager/textures/entity/villager/profession/merchant.png"
+            )
+            def merchantTexture = javax.imageio.ImageIO.read(zip.getInputStream(merchantTextureEntry))
+            if (merchantTexture == null || merchantTexture.width != 64 || merchantTexture.height != 64) {
+                throw new GradleException("Merchant profession texture must be a readable 64x64 image")
+            }
         } finally {
             zip.close()
         }

@@ -24,6 +24,31 @@ final class AssetValidationTest {
         assertTrue(image.getColorModel().hasAlpha());
         assertTrue(hasAlpha(image, 0), "profession overlay needs transparent pixels");
         assertTrue(hasAlpha(image, 255), "profession overlay needs visible pixels");
+
+        int opaquePixels = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                boolean opaque = (image.getRGB(x, y) >>> 24) != 0;
+                assertEquals(
+                    isMerchantUvIsland(x, y),
+                    opaque,
+                    "profession overlay changed the vanilla UV mask at " + x + "," + y
+                );
+                if (opaque) {
+                    opaquePixels++;
+                }
+            }
+        }
+        assertEquals(1_888, opaquePixels);
+
+        // These five colors are the dye-ready cloth contract. Permanent
+        // leather, shirt, gold, emerald, boots, and ledger pixels deliberately
+        // use separate colors and can remain unchanged when dyeing is added.
+        for (int clothRgb : new int[] {
+            0x300A19, 0x450E20, 0x5E152B, 0x7E2039, 0x992F45
+        }) {
+            assertTrue(containsOpaqueRgb(image, clothRgb), "missing cloth shade " + clothRgb);
+        }
     }
 
     @Test
@@ -68,5 +93,52 @@ final class AssetValidationTest {
             }
         }
         return false;
+    }
+
+    private static boolean containsOpaqueRgb(BufferedImage image, int expectedRgb) {
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if ((image.getRGB(x, y) & 0xFFFFFF) == expectedRgb
+                    && (image.getRGB(x, y) >>> 24) != 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isMerchantUvIsland(int x, int y) {
+        if (y <= 7) {
+            return between(x, 40, 55);
+        }
+        if (y <= 11) {
+            return between(x, 32, 63);
+        }
+        if (y >= 20 && y <= 21) {
+            return between(x, 22, 37);
+        }
+        if (y >= 22 && y <= 25) {
+            return between(x, 4, 11) || between(x, 22, 37) || between(x, 48, 55);
+        }
+        if (y >= 26 && y <= 33) {
+            return between(x, 0, 59);
+        }
+        if (y >= 34 && y <= 37) {
+            return between(x, 0, 43);
+        }
+        if (y >= 38 && y <= 41) {
+            return between(x, 6, 21) || between(x, 44, 59);
+        }
+        if (y >= 42 && y <= 43) {
+            return between(x, 6, 21) || between(x, 40, 63);
+        }
+        if (y >= 44 && y <= 45) {
+            return between(x, 0, 27) || between(x, 40, 63);
+        }
+        return y >= 46 && between(x, 0, 27);
+    }
+
+    private static boolean between(int value, int minimum, int maximum) {
+        return value >= minimum && value <= maximum;
     }
 }

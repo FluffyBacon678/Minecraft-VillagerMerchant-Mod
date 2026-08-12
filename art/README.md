@@ -8,6 +8,13 @@ profession overlay. `tools/generate_merchant_texture.py` translates its
 burgundy vest, walnut apron, emerald clasp, ledger, and satchel motifs onto the
 exact vanilla-compatible 64x64 villager UV islands.
 
+`merchant-profession-polish-source-v2.png` is the untouched 2026-08-12 clothing
+polish study. It uses the original concept and an in-game Merchant capture as
+references, sharpening the cap, split lapels, cream shirt, fitted two-pocket
+apron, cuffs, satchel, clasp, chain, and ledger. The generated 64x64 overlay
+keeps the five burgundy cloth shades separate from leather, wood, metal, shirt,
+emerald, and ledger pixels so a later dye system can recolor clothing only.
+
 `merchant-villager-project-icon-source.png` is the untouched icon generation.
 The model rendered a checkerboard as pixels, so
 `tools/prepare_project_icon.py` removes only the connected outer checkerboard
@@ -37,6 +44,18 @@ upload is `merchant-villager-project-thumbnail-v2.png`.
 > apron, gold-framed emerald clasp, and tiny ledger, with a subtle wooden
 > merchant counter and emerald behind it. Use a warm parchment-gold frame and a
 > strong silhouette that remains readable at small sizes.
+
+## Profession polish v2 prompt
+
+> Polish the existing Merchant Villager clothing as a clean Minecraft-style
+> pixel-art design reference. Preserve the low burgundy merchant cap, tailored
+> burgundy coat, cream shirt, walnut leather work apron, gold-framed emerald
+> clasp, ledger chain, satchel, cuffs, gloves, and small account ledger. Make
+> the split lapels, fitted apron and two pockets readable in game, keep the
+> silhouette restrained and villager-like, and clearly separate the cloth from
+> all permanent leather, metal, paper, wood, and emerald materials so only the
+> garment can be dyed later. No text, logos, weapons, wandering-trader hood, or
+> modern clothing.
 
 ## Project thumbnail v2 prompt
 
