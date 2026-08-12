@@ -17,18 +17,19 @@ the installed Prism instance.
 
 | ID | Scenario | Result | Evidence / notes |
 |---|---|---|---|
-| A01 | Java/unit tests | **PASS** | 57/57, zero failures/errors/skips; exact 64x64 profession UV mask and isolated five-shade cloth palette covered |
-| A02 | Full server gameplay suite | **PASS** | 55/55 required GameTests |
-| A03 | Repeat server suite for randomized travel/social timing | **PASS** | 55/55 repeat after interactive-cargo coverage; isolated stationary-boundary fixture also passed 3/3 after test-signature isolation |
+| A01 | Java/unit tests | **PASS** | 57/57, zero failures/errors/skips; exact 64x64 profession UV mask, permanent/tint-layer separation, and five-level cloth mask covered |
+| A02 | Full server gameplay suite | **PASS** | 57/57 required GameTests, including Merchant dye interaction and save/reload persistence |
+| A03 | Repeat server suite for randomized travel/social timing | **PASS** | 57/57 repeat after dye integration; isolated stationary-boundary fixture also passed 3/3 after test-signature isolation |
 | A04 | Real Merchant Post client-screen GameTest | **PASS** | Real renderer/network/cache/UI run succeeded; screenshot hash matches tracked release image |
 | A05 | Production build and release-jar verifier | **PASS** | Clean `build` succeeded; release verifier succeeded; no GameTest entrypoint/classes in production jar |
-| A06 | Artifact metadata, contents, and SHA-256 | **PASS** | Version/dependencies/Java 21/main+client entrypoints/11 required mixins verified |
+| A06 | Artifact metadata, contents, and SHA-256 | **PASS** | Version/dependencies/Java 21/main+client entrypoints/12 required mixins and both clothing texture layers verified |
 | A07 | Duplicate recipe approval regression | **PASS** | Component/count-identical visible recipes share one approval even when stock, merchant XP, price multiplier, or player-XP bookkeeping differs; legacy approval keys migrate |
 | A08 | Visible reward and chest-marker regression | **PASS** | Rewards remain in Merchant Cargo for 2 seconds, delivery receipt remains visible for 5 seconds, and generated role signs occupy the block directly on top of their chest |
 | A09 | Interactive Merchant Cargo | **PASS** | Cargo is nine real server-authoritative take-only slots; exact partial input and full reward withdrawals clear the correct physical stacks/flags without duplication; real client screen render passed |
+| A10 | Dyeable Merchant clothing | **PASS** | Survival consumes exactly one dye; Creative and same-color interactions consume none; babies and ordinary villagers ignore the feature; selected color survives entity NBT; only the isolated cloth UV mask is tinted |
 
 Final RC artifact: `merchant-villager-1.1.0-rc.1.jar`
-SHA-256: `200F24069E0BE8055AFD9C3F58B3B8C216B8C54C35532182D0A670F6022022F4`
+SHA-256: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`
 
 ## Manual Prism smoke scenarios
 
@@ -52,6 +53,7 @@ SHA-256: `200F24069E0BE8055AFD9C3F58B3B8C216B8C54C35532182D0A670F6022022F4`
 | M16 | Unified duplicate rows | PENDING | Identical visible paper-to-emerald recipes from multiple professions/providers appear once; one toggle authorizes every matching live offer |
 | M17 | Visible reward handoff | PENDING | During the 2-second review window emeralds appear in Merchant Cargo, then move to Export; status shows `Delivered ... to Export chest` for 5 seconds |
 | M18 | Early cargo withdrawal | PENDING | Take or shift-click paper/other reserved inputs and earned emeralds from Merchant Cargo; withdrawn rewards must not later appear again in Export |
+| M19 | Merchant clothing dyes | PENDING | Use several dyes on an adult Merchant and confirm only the cap/coat cloth changes, permanent apron/shirt/ledger/metal/emerald details do not, same-color use opens normal interaction without consuming dye, and the color survives world reload |
 
 ## Known RC notes
 
@@ -144,3 +146,28 @@ cases.
   GameTests 55/55, release build, and real client GameTest all pass.
 - Updated artifact SHA-256:
   `200F24069E0BE8055AFD9C3F58B3B8C216B8C54C35532182D0A670F6022022F4`.
+
+### 2026-08-12 dyeable clothing follow-up
+
+- Split the polished profession texture into a permanent material layer and a
+  neutral five-level cloth mask. The original undyed burgundy remains the
+  default appearance; all 16 vanilla dye colors tint only the cap and coat.
+- Adult Merchants accept dye with sheep-like interaction. Survival consumes
+  exactly one item, Creative consumes none, and applying the current color is
+  a no-op that preserves the normal Merchant interaction. Babies and ordinary
+  villagers are unaffected.
+- The color uses a persistent, client-synchronized Fabric entity attachment.
+  The server regression performs a real entity-NBT round trip, and the client
+  applies it through a dedicated Villager render-state mixin and feature layer.
+- Visual UV-sheet review confirmed every dye leaves leather, apron, shirt,
+  satchel, ledger, chain, gold, and emerald pixels unchanged. Automated
+  validation: unit tests 57/57, server GameTests 57/57, clean release build,
+  release-jar verifier, and real client GameTest all pass.
+- Installed the rebuilt RC into the isolated `MerchantVillager-RC-Smoke`
+  instance with exactly one Merchant Villager jar. Installed SHA-256 matches
+  the build: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`.
+  The Prism client reached a responsive Minecraft 1.21.11 window with Fabric
+  API, Mod Menu, Merchant Villager, the client mixin, and both texture layers;
+  `latest.log` contains no ERROR, FATAL, exception, mixin-failure, or
+  entrypoint-failure lines. The hands-on all-color appearance/reload check
+  remains M19 PENDING.

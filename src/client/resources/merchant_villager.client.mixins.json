@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.fluffybacon.merchantvillager.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "VillagerEntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

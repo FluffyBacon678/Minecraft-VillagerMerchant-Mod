@@ -13,7 +13,10 @@ polish study. It uses the original concept and an in-game Merchant capture as
 references, sharpening the cap, split lapels, cream shirt, fitted two-pocket
 apron, cuffs, satchel, clasp, chain, and ledger. The generated 64x64 overlay
 keeps the five burgundy cloth shades separate from leather, wood, metal, shirt,
-emerald, and ledger pixels so a later dye system can recolor clothing only.
+emerald, and ledger pixels. The generator writes the permanent profession
+overlay to `merchant.png` and a neutral five-level tint mask to
+`merchant_clothing.png`; the client renderer applies the Merchant's saved dye
+color only to that second layer.
 
 `merchant-villager-project-icon-source.png` is the untouched icon generation.
 The model rendered a checkerboard as pixels, so

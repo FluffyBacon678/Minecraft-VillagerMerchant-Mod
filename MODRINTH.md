@@ -47,6 +47,10 @@ mod provides translated name/summary/description metadata and uses Mod Menu's
 Modrinth update checker; Merchant Villager has no separate global settings
 screen because its player controls live on each Merchant's Post.
 
+Mention the sheep-style Merchant clothing feature in the long description:
+all 16 vanilla dyes recolor only the cloth, the choice persists, Survival uses
+one dye, and Creative/same-color interactions do not consume it.
+
 ### Files
 
 - Primary: `build/libs/merchant-villager-1.1.0-rc.1.jar`

@@ -9,6 +9,11 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.LivingEntityFeatureRendererRegistrationCallback;
+import net.minecraft.client.render.entity.VillagerEntityRenderer;
+import net.minecraft.client.render.entity.feature.FeatureRendererContext;
+import net.minecraft.client.render.entity.model.VillagerResemblingModel;
+import net.minecraft.client.render.entity.state.VillagerEntityRenderState;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.render.block.entity.SignBlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
@@ -22,6 +27,21 @@ public final class MerchantVillagerClient implements ClientModInitializer {
         BlockEntityRendererFactory<SignBlockEntity, SignBlockEntityRenderState> markerRenderer =
             SignBlockEntityRenderer::new;
         BlockEntityRendererRegistry.register(ModBlockEntities.CHEST_ROLE_MARKER, markerRenderer);
+        LivingEntityFeatureRendererRegistrationCallback.EVENT.register(
+            (entityType, renderer, registrationHelper, context) -> {
+                if (renderer instanceof VillagerEntityRenderer villagerRenderer) {
+                    @SuppressWarnings("unchecked")
+                    FeatureRendererContext<
+                        VillagerEntityRenderState,
+                        VillagerResemblingModel
+                    > featureContext = (FeatureRendererContext<
+                        VillagerEntityRenderState,
+                        VillagerResemblingModel
+                    >)(Object)villagerRenderer;
+                    registrationHelper.register(new MerchantClothingFeatureRenderer(featureContext));
+                }
+            }
+        );
         ClientPlayNetworking.registerGlobalReceiver(CataloguePayload.ID, (payload, context) ->
             ClientCatalogueCache.accept(payload)
         );

@@ -3,6 +3,7 @@ package com.fluffybacon.merchantvillager;
 import com.fluffybacon.merchantvillager.command.MerchantVillagerCommands;
 import com.fluffybacon.merchantvillager.inventory.StorageMarkerEvents;
 import com.fluffybacon.merchantvillager.merchant.MerchantInteractions;
+import com.fluffybacon.merchantvillager.merchant.MerchantClothing;
 import com.fluffybacon.merchantvillager.network.ModPayloads;
 import com.fluffybacon.merchantvillager.registry.ModBlockEntities;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
@@ -25,6 +26,7 @@ public final class MerchantVillagerMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        MerchantClothing.initialize();
         ModBlocks.initialize();
         ModBlockEntities.initialize();
         ModScreenHandlers.initialize();

@@ -1,9 +1,9 @@
 """Generate the polished 64x64 Merchant villager profession overlay.
 
 The design is translated from the project's Merchant concept art onto the
-vanilla villager model's exact UV islands.  The cloth ramp is intentionally
-isolated from leather, metal, shirt, ledger, and emerald colors so future dye
-variants can recolor the tailored garment without tinting its equipment.
+vanilla villager model's exact UV islands. Permanent materials are written to
+the vanilla profession layer and the isolated cloth ramp to a neutral tint
+mask, so the client can apply any saved dye color only to the tailored garment.
 Pillow is only a development-time dependency; the generated PNG is committed
 and is what Minecraft loads.
 """
@@ -18,6 +18,7 @@ OUTPUT = (
     ROOT
     / "src/main/resources/assets/merchant_villager/textures/entity/villager/profession/merchant.png"
 )
+CLOTHING_OUTPUT = OUTPUT.with_name("merchant_clothing.png")
 
 TRANSPARENT = (0, 0, 0, 0)
 # Dye-ready tailored cloth ramp. Keep all recolorable pixels in this family.
@@ -205,6 +206,27 @@ for start_x in (0, 4, 8, 12):
     rectangle(start_x, 34, start_x + 3, 37, WALNUT_DARK)
     rectangle(start_x, 34, start_x + 3, 34, WALNUT_LIGHT)
 
+cloth_mask_levels = {
+    CLOTH_SHADOW: 80,
+    CLOTH_DARK: 116,
+    CLOTH: 157,
+    CLOTH_LIGHT: 210,
+    CLOTH_HIGHLIGHT: 255,
+}
+permanent = image.copy()
+clothing = Image.new("RGBA", image.size, TRANSPARENT)
+permanent_pixels = permanent.load()
+clothing_pixels = clothing.load()
+for y in range(image.height):
+    for x in range(image.width):
+        original = pixels[x, y]
+        if original in cloth_mask_levels:
+            level = cloth_mask_levels[original]
+            permanent_pixels[x, y] = TRANSPARENT
+            clothing_pixels[x, y] = (level, level, level, original[3])
+
 OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-image.save(OUTPUT, optimize=True)
-print(f"Wrote {OUTPUT} ({image.size[0]}x{image.size[1]}, RGBA)")
+permanent.save(OUTPUT, optimize=True)
+clothing.save(CLOTHING_OUTPUT, optimize=True)
+print(f"Wrote {OUTPUT} ({permanent.size[0]}x{permanent.size[1]}, permanent materials)")
+print(f"Wrote {CLOTHING_OUTPUT} ({clothing.size[0]}x{clothing.size[1]}, dye-ready cloth mask)")

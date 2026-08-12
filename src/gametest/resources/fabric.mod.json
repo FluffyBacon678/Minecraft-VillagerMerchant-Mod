@@ -11,7 +11,8 @@
       "com.fluffybacon.merchantvillager.gametest.MerchantTradingGameTest",
       "com.fluffybacon.merchantvillager.gametest.MerchantExperienceGameTest",
       "com.fluffybacon.merchantvillager.gametest.GlobalTradeCatalogueGameTest",
-      "com.fluffybacon.merchantvillager.gametest.MerchantRecoveryGameTest"
+      "com.fluffybacon.merchantvillager.gametest.MerchantRecoveryGameTest",
+      "com.fluffybacon.merchantvillager.gametest.MerchantClothingGameTest"
     ],
     "fabric-client-gametest": [
       "com.fluffybacon.merchantvillager.clienttest.MerchantPostClientGameTest"

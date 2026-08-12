@@ -25,7 +25,11 @@
     ]
   },
   "mixins": [
-    "merchant_villager.mixins.json"
+    "merchant_villager.mixins.json",
+    {
+      "config": "merchant_villager.client.mixins.json",
+      "environment": "client"
+    }
   ],
   "depends": {
     "fabricloader": ">=0.19.3",

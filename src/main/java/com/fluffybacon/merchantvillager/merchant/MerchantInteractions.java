@@ -5,11 +5,18 @@ import com.fluffybacon.merchantvillager.registry.ModVillagerProfessions;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.entity.ai.brain.MemoryModuleType;
 import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.DyeItem;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
 import net.minecraft.util.math.GlobalPos;
+import net.minecraft.world.World;
 
 public final class MerchantInteractions {
     public static void initialize() {
@@ -19,6 +26,10 @@ public final class MerchantInteractions {
             }
             boolean merchantProfession = villager.getVillagerData().profession()
                 .matchesKey(ModVillagerProfessions.MERCHANT_KEY);
+            ActionResult dyeResult = tryDye(player, world, hand, villager, merchantProfession);
+            if (dyeResult != ActionResult.PASS) {
+                return dyeResult;
+            }
             if (world.isClient()) {
                 return merchantProfession ? ActionResult.SUCCESS : ActionResult.PASS;
             }
@@ -60,6 +71,41 @@ public final class MerchantInteractions {
             post.sendCatalogue(serverPlayer);
             return ActionResult.SUCCESS;
         });
+    }
+
+    /** Shared by the interaction callback and deterministic gameplay tests. */
+    public static ActionResult tryDye(
+        PlayerEntity player,
+        World world,
+        Hand hand,
+        VillagerEntity villager,
+        boolean merchantProfession
+    ) {
+        ItemStack heldStack = player.getStackInHand(hand);
+        if (!merchantProfession
+            || !villager.isAlive()
+            || villager.isBaby()
+            || !(heldStack.getItem() instanceof DyeItem dye)
+            || MerchantClothing.get(villager) == dye.getColor()) {
+            return ActionResult.PASS;
+        }
+        if (world.isClient()) {
+            return ActionResult.SUCCESS;
+        }
+        if (!player.canInteractWithEntity(villager, 4.0)) {
+            return ActionResult.FAIL;
+        }
+        MerchantClothing.set(villager, dye.getColor());
+        world.playSoundFromEntity(
+            player,
+            villager,
+            SoundEvents.ITEM_DYE_USE,
+            SoundCategory.PLAYERS,
+            1.0F,
+            1.0F
+        );
+        heldStack.decrementUnlessCreative(1, player);
+        return ActionResult.SUCCESS;
     }
 
     private static MerchantPostBlockEntity resolvePost(ServerWorld world, VillagerEntity villager) {

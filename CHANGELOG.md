@@ -22,14 +22,18 @@ Notable user-facing changes to Merchant Villager are recorded here.
 - A randomized 3–10 second villager conversation per same-target visit before
   the actual item swap, including mutual looking, ambient sounds, happy
   particles, interruption recovery, and a target-level reservation.
+- Sheep-style recoloring for adult Merchants with all 16 vanilla dyes. Only
+  the tailored cloth and cap are tinted; permanent apron, shirt, satchel,
+  ledger, metal, and emerald details retain their authored colors. Colors save
+  with the villager and synchronize to clients; Creative and same-color uses
+  do not consume dye.
 
 ### Improved
 
 - The Merchant's base outfit has cleaner cap shading, split lapels, cream
   sleeves, fitted apron pockets, coat tails, cuffs, satchel, clasp, chain, and
-  ledger details. Its burgundy cloth now uses an isolated dye-ready palette;
-  dye interaction and saved colors are intentionally reserved for a later
-  update.
+  ledger details. Its original burgundy cloth is now an isolated tint layer,
+  allowing dye colors without recoloring any permanent material.
 - Merchant Cargo is now a first-class part of the GUI; completed results have
   a gold outline and remain there until Export accepts them. Its nine slots are
   now server-authoritative and take-only, allowing players to retrieve carried

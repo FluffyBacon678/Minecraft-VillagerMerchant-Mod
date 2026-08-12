@@ -90,8 +90,10 @@ tasks.register("verifyReleaseJar") {
             "com/fluffybacon/merchantvillager/MerchantVillagerMod.class",
             "com/fluffybacon/merchantvillager/client/MerchantVillagerClient.class",
             "merchant_villager.mixins.json",
+            "merchant_villager.client.mixins.json",
             "assets/merchant_villager/icon.png",
             "assets/merchant_villager/textures/entity/villager/profession/merchant.png",
+            "assets/merchant_villager/textures/entity/villager/profession/merchant_clothing.png",
             "assets/merchant_villager/textures/entity/zombie_villager/profession/merchant.png"
         ]
         def forbiddenPatterns = [
@@ -136,6 +138,15 @@ tasks.register("verifyReleaseJar") {
             def merchantTexture = javax.imageio.ImageIO.read(zip.getInputStream(merchantTextureEntry))
             if (merchantTexture == null || merchantTexture.width != 64 || merchantTexture.height != 64) {
                 throw new GradleException("Merchant profession texture must be a readable 64x64 image")
+            }
+            def merchantClothingEntry = zip.getEntry(
+                "assets/merchant_villager/textures/entity/villager/profession/merchant_clothing.png"
+            )
+            def merchantClothing = javax.imageio.ImageIO.read(zip.getInputStream(merchantClothingEntry))
+            if (merchantClothing == null
+                || merchantClothing.width != 64
+                || merchantClothing.height != 64) {
+                throw new GradleException("Merchant clothing mask must be a readable 64x64 image")
             }
         } finally {
             zip.close()

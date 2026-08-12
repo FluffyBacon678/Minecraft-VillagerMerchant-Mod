@@ -79,7 +79,8 @@ intent packets. The server revalidates the open handler, post position,
 interaction distance, catalogue key, selected input, item components,
 inventory capacity, and all counts before changing state.
 
-Eleven narrowly scoped mixins are used. `VillagerEntityMixin` persists worker
+Twelve narrowly scoped mixins are used: eleven common mixins and one
+client-only render-state mixin. `VillagerEntityMixin` persists worker
 state, invokes the controller after the vanilla Brain tick, handles normal
 death cargo, and captures only automated-trade XP spawning. The Wandering
 Trader mixin applies the same narrow XP capture, while `ZombieEntityMixin`
@@ -89,3 +90,6 @@ suppresses loot only for owned generated role signs. Six read-only factory
 markers/accessors classify deterministic, randomized, wrapped, enchanted, and
 map-backed vanilla trade factories; `SellMapFactoryAccessor` also synthesizes
 explorer-map previews without structure searches or world map allocation.
+`VillagerEntityRendererMixin` copies the synchronized Merchant clothing color
+into the client render state; a feature renderer then tints only the separate
+cloth mask.

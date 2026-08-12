@@ -38,6 +38,12 @@ unemployed adult villager, and place one or two chests directly against the
 post. Open the post (or interact with its assigned Merchant) to approve offers
 and insert matching trade materials into its 27-slot Trade Storage.
 
+Use any of Minecraft's 16 dyes directly on an adult Merchant to recolor only
+its cap and tailored cloth, just like dyeing a sheep. Leather, apron, shirt,
+ledger, gold, and emerald details keep their original colors. Dye is consumed
+once in Survival, retained in Creative, and not consumed when the Merchant is
+already that color. The selected color is saved and synchronized to clients.
+
 Only a chest block that shares a face with the post is accepted. Diagonal
 chests, chests separated by a gap, and unrelated nearby player storage are
 ignored. A connected double chest works when at least one half shares a face

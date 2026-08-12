@@ -15,39 +15,58 @@ import org.junit.jupiter.api.Test;
 final class AssetValidationTest {
     @Test
     void merchantProfessionOverlayUsesVanillaUvDimensionsAndTransparency() throws IOException {
-        BufferedImage image = load(
+        BufferedImage permanent = load(
             "/assets/merchant_villager/textures/entity/villager/profession/merchant.png"
         );
+        BufferedImage clothing = load(
+            "/assets/merchant_villager/textures/entity/villager/profession/merchant_clothing.png"
+        );
 
-        assertEquals(64, image.getWidth());
-        assertEquals(64, image.getHeight());
-        assertTrue(image.getColorModel().hasAlpha());
-        assertTrue(hasAlpha(image, 0), "profession overlay needs transparent pixels");
-        assertTrue(hasAlpha(image, 255), "profession overlay needs visible pixels");
+        assertEquals(64, permanent.getWidth());
+        assertEquals(64, permanent.getHeight());
+        assertEquals(64, clothing.getWidth());
+        assertEquals(64, clothing.getHeight());
+        assertTrue(permanent.getColorModel().hasAlpha());
+        assertTrue(clothing.getColorModel().hasAlpha());
+        assertTrue(hasAlpha(permanent, 0), "profession overlay needs transparent pixels");
+        assertTrue(hasAlpha(permanent, 255), "profession overlay needs visible pixels");
+        assertTrue(hasAlpha(clothing, 0), "clothing mask needs transparent pixels");
+        assertTrue(hasAlpha(clothing, 255), "clothing mask needs visible pixels");
 
         int opaquePixels = 0;
-        for (int y = 0; y < image.getHeight(); y++) {
-            for (int x = 0; x < image.getWidth(); x++) {
-                boolean opaque = (image.getRGB(x, y) >>> 24) != 0;
+        for (int y = 0; y < permanent.getHeight(); y++) {
+            for (int x = 0; x < permanent.getWidth(); x++) {
+                boolean permanentOpaque = (permanent.getRGB(x, y) >>> 24) != 0;
+                boolean clothingOpaque = (clothing.getRGB(x, y) >>> 24) != 0;
                 assertEquals(
                     isMerchantUvIsland(x, y),
-                    opaque,
-                    "profession overlay changed the vanilla UV mask at " + x + "," + y
+                    permanentOpaque || clothingOpaque,
+                    "combined profession layers changed the vanilla UV mask at " + x + "," + y
                 );
-                if (opaque) {
+                assertTrue(
+                    !(permanentOpaque && clothingOpaque),
+                    "permanent and dyeable layers overlap at " + x + "," + y
+                );
+                if (permanentOpaque || clothingOpaque) {
                     opaquePixels++;
+                }
+                if (clothingOpaque) {
+                    int rgb = clothing.getRGB(x, y) & 0xFFFFFF;
+                    int red = rgb >> 16;
+                    int green = rgb >> 8 & 0xFF;
+                    int blue = rgb & 0xFF;
+                    assertTrue(red == green && green == blue, "cloth mask must be neutral grayscale");
                 }
             }
         }
         assertEquals(1_888, opaquePixels);
 
-        // These five colors are the dye-ready cloth contract. Permanent
-        // leather, shirt, gold, emerald, boots, and ledger pixels deliberately
-        // use separate colors and can remain unchanged when dyeing is added.
+        // These five neutral levels preserve the tailored cloth shading while
+        // the renderer supplies the selected dye color.
         for (int clothRgb : new int[] {
-            0x300A19, 0x450E20, 0x5E152B, 0x7E2039, 0x992F45
+            0x505050, 0x747474, 0x9D9D9D, 0xD2D2D2, 0xFFFFFF
         }) {
-            assertTrue(containsOpaqueRgb(image, clothRgb), "missing cloth shade " + clothRgb);
+            assertTrue(containsOpaqueRgb(clothing, clothRgb), "missing cloth shade " + clothRgb);
         }
     }
 
