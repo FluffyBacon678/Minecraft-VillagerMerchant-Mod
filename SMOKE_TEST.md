@@ -54,6 +54,7 @@ SHA-256: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`
 | M17 | Visible reward handoff | PENDING | During the 2-second review window emeralds appear in Merchant Cargo, then move to Export; status shows `Delivered ... to Export chest` for 5 seconds |
 | M18 | Early cargo withdrawal | PENDING | Take or shift-click paper/other reserved inputs and earned emeralds from Merchant Cargo; withdrawn rewards must not later appear again in Export |
 | M19 | Merchant clothing dyes | **PASS** | Blue in Survival consumed exactly one dye; applying blue again consumed none and opened the normal Merchant UI; red and lime in Creative consumed none; only cap/coat cloth changed; lime survived a full save/quit/reload |
+| M20 | Mod Menu and release presentation | **PASS** | Real Mod Menu screen showed the crisp icon, name, version, author, summary, description, Website/Issues/Source links, and no misleading Configure button; the 256x256 thumbnail is readable; a clean client reached the title screen and initialized Merchant Villager with Mod Menu absent |
 
 ## Known RC notes
 
@@ -189,3 +190,23 @@ cases.
 - Evidence: `art/screenshots/smoke-merchant-blue-dye.png`,
   `smoke-merchant-red-dye.png`, `smoke-merchant-lime-dye.png`, and
   `smoke-merchant-lime-after-reload.png`.
+
+### 2026-08-13 Mod Menu and release-presentation smoke
+
+- The installed RC rendered a crisp project icon and the expected
+  `Merchant Villager` / `v1.1.0-rc.1` / `FluffyBacon` identity in Mod Menu.
+  The summary and full description were readable without clipping at the
+  smoke instance's normal 854x480 window size.
+- Website, Issues, and Source were present and their configured GitHub targets
+  were reachable. No Configure button appeared, which matches the intentional
+  per-Post controls and absence of a global settings screen.
+- `art/merchant-villager-project-thumbnail-v2.png` was visually reviewed and
+  verified as a readable 256x256 RGBA PNG at 106,467 bytes, below the 256 KiB
+  release limit.
+- A separate clean Fabric client loaded only Fabric API and Merchant Villager:
+  Mod Menu was absent from the loader list, Merchant Villager initialized, all
+  client atlases loaded, the title screen became responsive, and the client
+  stopped normally. Authentication-only Realms warnings from the development
+  launch were unrelated to mod loading.
+- Evidence: `art/screenshots/smoke-mod-menu-listing.png` and
+  `smoke-modmenu-optional-launch.png`.
