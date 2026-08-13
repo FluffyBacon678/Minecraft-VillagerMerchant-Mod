@@ -53,7 +53,7 @@ SHA-256: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`
 | M16 | Unified duplicate rows | PENDING | Identical visible paper-to-emerald recipes from multiple professions/providers appear once; one toggle authorizes every matching live offer |
 | M17 | Visible reward handoff | PENDING | During the 2-second review window emeralds appear in Merchant Cargo, then move to Export; status shows `Delivered ... to Export chest` for 5 seconds |
 | M18 | Early cargo withdrawal | PENDING | Take or shift-click paper/other reserved inputs and earned emeralds from Merchant Cargo; withdrawn rewards must not later appear again in Export |
-| M19 | Merchant clothing dyes | PENDING | Use several dyes on an adult Merchant and confirm only the cap/coat cloth changes, permanent apron/shirt/ledger/metal/emerald details do not, same-color use opens normal interaction without consuming dye, and the color survives world reload |
+| M19 | Merchant clothing dyes | **PASS** | Blue in Survival consumed exactly one dye; applying blue again consumed none and opened the normal Merchant UI; red and lime in Creative consumed none; only cap/coat cloth changed; lime survived a full save/quit/reload |
 
 ## Known RC notes
 
@@ -169,5 +169,23 @@ cases.
   The Prism client reached a responsive Minecraft 1.21.11 window with Fabric
   API, Mod Menu, Merchant Villager, the client mixin, and both texture layers;
   `latest.log` contains no ERROR, FATAL, exception, mixin-failure, or
-  entrypoint-failure lines. The hands-on all-color appearance/reload check
-  remains M19 PENDING.
+  entrypoint-failure lines.
+
+### 2026-08-13 hands-on dye smoke
+
+- Reused the isolated `Merchant RC Smoke` village world and the exact installed
+  `1.1.0-rc.1` artifact with SHA-256
+  `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`.
+- In Survival, applying blue dye changed only the Merchant's cap and coat and
+  reduced a stack of two dyes to one. Applying blue again kept the final dye
+  and opened the ordinary Merchant's Post UI, confirming same-color fallback.
+- In Creative, red and lime each recolored the cap and coat while their stacks
+  remained at two. The cream shirt and sleeves, walnut apron and ledger,
+  leather, gold trim, and emerald clasp remained visually unchanged.
+- Lime persisted through a full Save and Quit to Title followed by a fresh
+  world load. The temporary `NoAI` camera hold was removed afterward, the
+  world saved cleanly again, and the client reached `Stopping!` with no ERROR,
+  FATAL, exception, mixin-failure, or entrypoint-failure lines.
+- Evidence: `art/screenshots/smoke-merchant-blue-dye.png`,
+  `smoke-merchant-red-dye.png`, `smoke-merchant-lime-dye.png`, and
+  `smoke-merchant-lime-after-reload.png`.
