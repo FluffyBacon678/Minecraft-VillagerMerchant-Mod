@@ -1,5 +1,6 @@
 package com.fluffybacon.merchantvillager.gametest;
 
+import com.fluffybacon.merchantvillager.MerchantVillagerMod;
 import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.config.MerchantVillagerConfig;
 import com.fluffybacon.merchantvillager.inventory.OutputChestFinder;
@@ -435,6 +436,10 @@ public final class MerchantTradingGameTest {
 
         context.runAtTick(600, () -> {
             MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            int cargoItems = state.cargo().stream()
+                .filter(stack -> !stack.isEmpty())
+                .mapToInt(ItemStack::getCount)
+                .sum();
             String diagnostics = "state=" + state.state()
                 + ", status=" + state.status()
                 + ", failure=" + state.lastFailure()
@@ -442,6 +447,17 @@ public final class MerchantTradingGameTest {
                 + ", postInput=" + post.count(Items.CHORUS_FRUIT)
                 + ", chestReward=" + dualChest.count(Items.END_ROD)
                 + ", cargo=" + state.cargo();
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario=dual_chest uses={} chest_input={} post_input={} "
+                    + "chest_reward={} cargo_items={} state={} failure={}",
+                offer.getUses(),
+                dualChest.count(Items.CHORUS_FRUIT),
+                post.count(Items.CHORUS_FRUIT),
+                dualChest.count(Items.END_ROD),
+                cargoItems,
+                state.state(),
+                state.lastFailure().isBlank() ? "none" : state.lastFailure()
+            );
             context.assertEquals(1, offer.getUses(), "Dual-chest trade must execute exactly once (" + diagnostics + ")");
             context.assertEquals(0, dualChest.count(Items.CHORUS_FRUIT), "Dual Import must supply both exact inputs");
             context.assertEquals(0, post.count(Items.CHORUS_FRUIT), "No consumed input may remain in Trade Storage");
