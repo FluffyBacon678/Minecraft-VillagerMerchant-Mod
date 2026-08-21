@@ -398,6 +398,153 @@ public final class MerchantTradingGameTest {
         });
     }
 
+    @GameTest(maxTicks = 700, skyAccess = true)
+    public void oneDualChestImportsInputsAndKeepsTheDeliveredReward(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        BlockPos dualChestPos = new BlockPos(2, 1, 1);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(dualChestPos, Blocks.CHEST);
+
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(5, 1, 2));
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(
+            new TradedItem(Items.CHORUS_FRUIT, 2),
+            Optional.empty(),
+            new ItemStack(Items.END_ROD),
+            1,
+            2,
+            0.11F
+        );
+        target.getOffers().add(offer);
+        prepareWorker(context, worker, postPos);
+
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        ChestBlockEntity dualChest = context.getBlockEntity(dualChestPos, ChestBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        String fingerprint = post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .findFirst()
+            .orElseThrow()
+            .fingerprint();
+        post.setOfferEnabledInternal(fingerprint, true);
+        dualChest.setStack(0, new ItemStack(Items.CHORUS_FRUIT, 2));
+
+        context.runAtTick(600, () -> {
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            String diagnostics = "state=" + state.state()
+                + ", status=" + state.status()
+                + ", failure=" + state.lastFailure()
+                + ", chestInput=" + dualChest.count(Items.CHORUS_FRUIT)
+                + ", postInput=" + post.count(Items.CHORUS_FRUIT)
+                + ", chestReward=" + dualChest.count(Items.END_ROD)
+                + ", cargo=" + state.cargo();
+            context.assertEquals(1, offer.getUses(), "Dual-chest trade must execute exactly once (" + diagnostics + ")");
+            context.assertEquals(0, dualChest.count(Items.CHORUS_FRUIT), "Dual Import must supply both exact inputs");
+            context.assertEquals(0, post.count(Items.CHORUS_FRUIT), "No consumed input may remain in Trade Storage");
+            context.assertEquals(1, dualChest.count(Items.END_ROD), "Dual Export must retain the exact reward");
+            context.assertFalse(state.hasCargo(), "Dual-chest delivery must settle all worker cargo");
+            context.complete();
+        });
+    }
+
+    @GameTest(maxTicks = 250, skyAccess = true)
+    public void disappearingTargetDuringGreetingReturnsInputWithoutReward(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        BlockPos chestPos = new BlockPos(2, 1, 1);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(chestPos, Blocks.CHEST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(2, 1, 2));
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(
+            new TradedItem(Items.GLOW_INK_SAC),
+            Optional.empty(),
+            new ItemStack(Items.RECOVERY_COMPASS),
+            1,
+            3,
+            0.13F
+        );
+        target.getOffers().add(offer);
+        prepareWorker(context, worker, postPos);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        String fingerprint = post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .findFirst()
+            .orElseThrow()
+            .fingerprint();
+        post.setOfferEnabledInternal(fingerprint, true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        context.assertTrue(state.add(new ItemStack(Items.GLOW_INK_SAC), false), "Greeting input must load");
+        state.target(target.getUuid(), 0, fingerprint);
+        state.plannedExecutions(1);
+        state.beginTradingInteraction(MerchantVillagerConfig.MIN_TRADE_INTERACTION_TICKS);
+        state.enter(MerchantState.TRADING_BUSY, "Testing disappearing greeting target");
+
+        context.runAtTick(2, target::discard);
+        context.runAtTick(180, () -> {
+            ChestBlockEntity chest = context.getBlockEntity(chestPos, ChestBlockEntity.class);
+            context.assertEquals(0, offer.getUses(), "A disappeared target must execute no trade");
+            context.assertEquals(1, post.count(Items.GLOW_INK_SAC), "The exact interrupted input must return");
+            context.assertEquals(0, chest.count(Items.RECOVERY_COMPASS), "Interruption must create no reward");
+            context.assertFalse(state.hasCargo(), "Interrupted greeting cargo must settle completely");
+            context.complete();
+        });
+    }
+
+    @GameTest(maxTicks = 250, skyAccess = true)
+    public void disablingTradeDuringGreetingReturnsInputWithoutReward(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(1, 1, 1);
+        BlockPos chestPos = new BlockPos(2, 1, 1);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(chestPos, Blocks.CHEST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(2, 1, 2));
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(
+            new TradedItem(Items.ECHO_SHARD),
+            Optional.empty(),
+            new ItemStack(Items.MUSIC_DISC_5),
+            1,
+            4,
+            0.17F
+        );
+        target.getOffers().add(offer);
+        prepareWorker(context, worker, postPos);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        String fingerprint = post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .findFirst()
+            .orElseThrow()
+            .fingerprint();
+        post.setOfferEnabledInternal(fingerprint, true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        context.assertTrue(state.add(new ItemStack(Items.ECHO_SHARD), false), "Greeting input must load");
+        state.target(target.getUuid(), 0, fingerprint);
+        state.plannedExecutions(1);
+        state.beginTradingInteraction(MerchantVillagerConfig.MIN_TRADE_INTERACTION_TICKS);
+        state.enter(MerchantState.TRADING_BUSY, "Testing permission removal during greeting");
+
+        context.runAtTick(2, () -> post.setOfferEnabledInternal(fingerprint, false));
+        context.runAtTick(180, () -> {
+            ChestBlockEntity chest = context.getBlockEntity(chestPos, ChestBlockEntity.class);
+            context.assertEquals(0, offer.getUses(), "A disabled in-flight trade must execute no use");
+            context.assertEquals(1, post.count(Items.ECHO_SHARD), "The exact disabled input must return");
+            context.assertEquals(0, chest.count(Items.MUSIC_DISC_5), "Disabling must create no reward");
+            context.assertFalse(state.hasCargo(), "Disabled greeting cargo must settle completely");
+            context.complete();
+        });
+    }
+
     @GameTest(maxTicks = 600, skyAccess = true)
     public void multipleTradesDeliverRewardsToTouchingChestInOneTrip(TestContext context) {
         createFloor(context);
