@@ -561,6 +561,99 @@ public final class MerchantTradingGameTest {
         });
     }
 
+    @GameTest(maxTicks = 800, skyAccess = true)
+    public void emeraldsInImportAreFullyConvertedToGoods(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(3, 1, 2);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(postPos.west(), Blocks.CHEST);
+        context.setBlockState(postPos.east(), Blocks.CHEST);
+
+        VillagerEntity worker = spawnVillager(context, new BlockPos(3, 1, 3));
+        VillagerEntity target = spawnVillager(context, new BlockPos(6, 1, 3));
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer clock = new TradeOffer(
+            new TradedItem(Items.EMERALD, 2), Optional.empty(), new ItemStack(Items.CLOCK), 1, 2, 0.06F
+        );
+        TradeOffer compass = new TradeOffer(
+            new TradedItem(Items.EMERALD, 3), Optional.empty(), new ItemStack(Items.COMPASS), 1, 3, 0.08F
+        );
+        TradeOffer nameTag = new TradeOffer(
+            new TradedItem(Items.EMERALD, 4), Optional.empty(), new ItemStack(Items.NAME_TAG), 1, 4, 0.10F
+        );
+        target.getOffers().add(clock);
+        target.getOffers().add(compass);
+        target.getOffers().add(nameTag);
+        prepareWorker(context, worker, postPos);
+
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .forEach(snapshot -> post.setOfferEnabledInternal(snapshot.fingerprint(), true));
+
+        boolean[] sawRewardReview = {false};
+        context.runAtTick(5, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            Inventory export = post.getExportInventory(context.getWorld());
+            context.assertTrue(source != null, "Two touching chests must produce an Import inventory");
+            context.assertTrue(export != null, "Two touching chests must produce an Export inventory");
+            source.setStack(0, new ItemStack(Items.EMERALD, 9));
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario=emeralds_to_goods phase=loaded import_emeralds={} export_goods={}",
+                source.count(Items.EMERALD),
+                export.count(Items.CLOCK) + export.count(Items.COMPASS) + export.count(Items.NAME_TAG)
+            );
+        });
+
+        context.runAtEveryTick(() -> {
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            if (!sawRewardReview[0] && state.state() == MerchantState.REVIEWING_REWARDS) {
+                sawRewardReview[0] = true;
+                int cargoGoods = state.cargo().stream()
+                    .filter(stack -> stack.isOf(Items.CLOCK) || stack.isOf(Items.COMPASS) || stack.isOf(Items.NAME_TAG))
+                    .mapToInt(ItemStack::getCount)
+                    .sum();
+                MerchantVillagerMod.LOGGER.info(
+                    "GAME_TEST_EVIDENCE scenario=emeralds_to_goods phase=rewards_received "
+                        + "uses={}/{}/{} cargo_goods={}",
+                    clock.getUses(), compass.getUses(), nameTag.getUses(), cargoGoods
+                );
+            }
+        });
+
+        context.runAtTick(700, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            Inventory export = post.getExportInventory(context.getWorld());
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            int cargoItems = state.cargo().stream()
+                .filter(stack -> !stack.isEmpty())
+                .mapToInt(ItemStack::getCount)
+                .sum();
+            int remainingEmeralds = source.count(Items.EMERALD) + post.count(Items.EMERALD);
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario=emeralds_to_goods phase=final uses={}/{}/{} "
+                    + "remaining_emeralds={} export_clock={} export_compass={} export_name_tag={} "
+                    + "cargo_items={} state={} failure={}",
+                clock.getUses(), compass.getUses(), nameTag.getUses(), remainingEmeralds,
+                export.count(Items.CLOCK), export.count(Items.COMPASS), export.count(Items.NAME_TAG),
+                cargoItems, state.state(), state.lastFailure().isBlank() ? "none" : state.lastFailure()
+            );
+            context.assertEquals(1, clock.getUses(), "Clock trade must execute exactly once");
+            context.assertEquals(1, compass.getUses(), "Compass trade must execute exactly once");
+            context.assertEquals(1, nameTag.getUses(), "Name-tag trade must execute exactly once");
+            context.assertEquals(0, remainingEmeralds, "All nine emeralds must be consumed exactly once");
+            context.assertEquals(1, export.count(Items.CLOCK), "Export must contain the purchased clock");
+            context.assertEquals(1, export.count(Items.COMPASS), "Export must contain the purchased compass");
+            context.assertEquals(1, export.count(Items.NAME_TAG), "Export must contain the purchased name tag");
+            context.assertEquals(0, cargoItems, "All purchased goods must leave Merchant Cargo after delivery");
+            context.assertTrue(sawRewardReview[0], "Purchased goods must be visible in Merchant Cargo before delivery");
+            context.complete();
+        });
+    }
+
     @GameTest(maxTicks = 250, skyAccess = true)
     public void disappearingTargetDuringGreetingReturnsInputWithoutReward(TestContext context) {
         createFloor(context);
