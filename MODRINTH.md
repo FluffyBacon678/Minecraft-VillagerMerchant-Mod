@@ -61,17 +61,17 @@ Do not upload the reference texture ZIP files or development/run directories.
 
 ## Media and rights
 
-- Use a square, project-relevant icon that the project author has the right to
-  redistribute. The prepared upload is
-  `art/merchant-villager-project-thumbnail-v2.png` (256 x 256 PNG, verified at
-  no more than Modrinth's 256 KiB upload limit). Its full-resolution generated
-  source is `art/merchant-villager-project-thumbnail-source-v2.png`; the first
-  icon and its source remain available as non-destructive alternatives.
-- Gallery candidates are `art/screenshots/merchant-post-gui.png` (title:
-  `Merchant's Post trade control`) and
-  `art/screenshots/merchant-villager-outfit.png` (title:
-  `The physical Merchant worker`). Add a third delivery screenshot when one is
-  available.
+- Do **not** upload `art/merchant-villager-project-thumbnail-v2.png`, either
+  generated source image, or the derived Fabric icon to the Modrinth project
+  page. Modrinth's August 13, 2026 rules prohibit AI-generated or AI-derived
+  images in project icons, gallery entries, descriptions, and changelogs.
+- A new project icon made directly by the human project author is required
+  before submission. Record its source and authorship here before uploading it.
+- `art/screenshots/merchant-post-gui.png` is a deterministic in-game capture of
+  the real GUI and does not contain the AI-derived Merchant clothing. It is the
+  safest current gallery candidate (title: `Merchant's Post trade control`).
+- Do not upload `art/screenshots/merchant-villager-outfit.png` or other images
+  containing the AI-derived clothing artwork under the current image rule.
 - Give every gallery image a descriptive title.
 - Before submission, confirm that every bundled mod-authored texture and icon
   is original or covered by permission that allows redistribution under the
@@ -79,6 +79,15 @@ Do not upload the reference texture ZIP files or development/run directories.
 - Confirm the in-game gallery captures may be used for project documentation
   and uploaded under the applicable Minecraft terms and usage guidelines; do
   not describe the Minecraft imagery inside them as CC0.
+
+## AI disclosure
+
+The project used substantial generative-AI assistance for code, artwork,
+documentation, testing, and publication preparation. Select Modrinth's
+`Contains AI-generated content` disclosure and describe that assistance
+honestly. Public submission is only appropriate if the human author made the
+primary and significant creative contribution required by Modrinth's current
+rules; this is an author judgment that automated checks cannot make.
 
 ## Final checks
 
@@ -90,4 +99,6 @@ Do not upload the reference texture ZIP files or development/run directories.
 - Confirm the project title contains only the project name and the summary does
   not repeat it.
 - Confirm the description remains readable without relying on images.
+- Confirm a human-authored, non-AI-generated project icon is being used.
+- Confirm `Contains AI-generated content` is selected and accurately described.
 - Check https://modrinth.com/legal/rules immediately before submission.

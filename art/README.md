@@ -26,7 +26,9 @@ and creates both the transparent release icon and the 128x128 Fabric icon.
 `merchant-villager-project-thumbnail-source-v2.png` is the untouched 2026-08-11
 release-thumbnail generation. The existing project icon and profession concept
 were supplied only as identity/style references. The optimized 256x256 Modrinth
-upload is `merchant-villager-project-thumbnail-v2.png`.
+copy is `merchant-villager-project-thumbnail-v2.png`. These files are retained
+as development history only. Modrinth's August 13, 2026 rules prohibit their
+use as a project-page icon, gallery image, or description image.
 
 ## Profession concept prompt
 

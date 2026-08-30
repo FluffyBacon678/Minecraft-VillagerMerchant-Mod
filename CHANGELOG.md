@@ -30,6 +30,9 @@ Notable user-facing changes to Merchant Villager are recorded here.
 
 ### Improved
 
+- The Merchant Post screen now uses recessed trade-item slots, bordered
+  selection and hover states, clearer ON/OFF controls, human-readable worker
+  states, localized controls, and compact player-facing status summaries.
 - The Merchant's base outfit has cleaner cap shading, split lapels, cream
   sleeves, fitted apron pockets, coat tails, cuffs, satchel, clasp, chain, and
   ledger details. Its original burgundy cloth is now an isolated tint layer,

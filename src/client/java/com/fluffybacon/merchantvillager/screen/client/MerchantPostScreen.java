@@ -81,7 +81,8 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         search.setChangedListener(ignored -> page = 0);
         addDrawableChild(search);
 
-        filterButton = addDrawableChild(ButtonWidget.builder(Text.literal("All"), button -> {
+        filterButton = addDrawableChild(ButtonWidget.builder(
+            Text.translatable("merchant_villager.filter.all"), button -> {
             CataloguePayload payload = catalogue();
             int count = payload == null ? 1 : filterChoices(payload).size();
             filterIndex = Math.floorMod(filterIndex + 1, count);
@@ -90,14 +91,14 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }).dimensions(x + 154, y + 3, 36, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.filter")))
             .build());
-        sortButton = addDrawableChild(ButtonWidget.builder(Text.literal(sortMode.label), button -> {
+        sortButton = addDrawableChild(ButtonWidget.builder(Text.translatable(sortMode.key), button -> {
             sortMode = sortMode.next();
             page = 0;
             updateControlLabels(catalogue());
         }).dimensions(x + 192, y + 3, 36, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.sort")))
             .build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("X All"), button -> {
+        addDrawableChild(ButtonWidget.builder(Text.translatable("merchant_villager.disable_all"), button -> {
             CataloguePayload payload = catalogue();
             if (payload != null) {
                 ClientPlayNetworking.send(new DisableAllOffersPayload(payload.postPos()));
@@ -177,7 +178,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         if (entries.isEmpty()) {
             context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.literal("No matching trades"),
+                Text.translatable("merchant_villager.no_matching_trades"),
                 x + TRADE_LEFT + TRADE_WIDTH / 2,
                 y + 82,
                 0xFF6A5540
@@ -185,7 +186,9 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }
         context.drawText(
             textRenderer,
-            Text.literal((page + 1) + "/" + pages + "  " + entries.size() + "/" + payload.entries().size()),
+            Text.translatable(
+                "merchant_villager.page_summary", page + 1, pages, entries.size(), payload.entries().size()
+            ),
             x + 8,
             y + 156,
             0xFF403020,
@@ -198,7 +201,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private void drawStatusFooter(DrawContext context, CataloguePayload payload) {
         context.drawText(
             textRenderer,
-            fitText(payload.workerState() + " \u2014 " + payload.status(), 132),
+            fitText(displayState(payload.workerState()) + " \u2014 " + payload.status(), 132),
             x + 8,
             y + 177,
             0xFF403020,
@@ -206,11 +209,10 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         );
         context.drawText(
             textRenderer,
-            Text.literal(
-                payload.targetCount() + "T  "
-                    + payload.enabledCount() + " on  "
-                    + payload.executableCount() + " ready"
-            ),
+            fitText(Text.translatable(
+                    "merchant_villager.trade_summary",
+                    payload.targetCount(), payload.enabledCount(), payload.executableCount()
+                ).getString(), 132),
             x + 8,
             y + 189,
             0xFF403020,
@@ -311,7 +313,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             );
             context.drawText(
                 textRenderer,
-                Text.literal(payload.targetCount() + " targets"),
+                Text.translatable("merchant_villager.target_count", payload.targetCount()),
                 left,
                 y + 117,
                 color,
@@ -323,7 +325,9 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         context.drawText(textRenderer, fitText(stats.name(), 98), left, y + 105, color, false);
         context.drawText(
             textRenderer,
-            Text.literal("HP " + formatOne(stats.health()) + "/" + formatOne(stats.maxHealth())),
+            Text.translatable(
+                "merchant_villager.health", formatOne(stats.health()), formatOne(stats.maxHealth())
+            ),
             left,
             y + 116,
             color,
@@ -332,8 +336,10 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         context.drawText(
             textRenderer,
             fitText(
-                "Trip " + stats.completedExecutions() + "/" + stats.plannedExecutions()
-                    + "  XP " + stats.storedExperience(),
+                Text.translatable(
+                    "merchant_villager.work_order",
+                    stats.completedExecutions(), stats.plannedExecutions(), stats.storedExperience()
+                ).getString(),
                 98
             ),
             left,
@@ -363,6 +369,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         context.fill(slotX, slotY, slotX + 16, slotY + 16, 0xFFC2A675);
         context.fill(slotX, slotY, slotX + 16, slotY + 1, 0xFFE2C998);
         context.fill(slotX, slotY, slotX + 1, slotY + 16, 0xFFE2C998);
+    }
+
+    private static void drawOutline(
+        DrawContext context, int left, int top, int right, int bottom, int color
+    ) {
+        context.fill(left, top, right, top + 1, color);
+        context.fill(left, bottom - 1, right, bottom, color);
+        context.fill(left, top + 1, left + 1, bottom - 1, color);
+        context.fill(right - 1, top + 1, right, bottom - 1, color);
     }
 
     @Override
@@ -412,17 +427,29 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             rowY + TRADE_ROW_HEIGHT - 2,
             background
         );
+        if (hovered || entry.selected()) {
+            drawOutline(
+                context,
+                x + TRADE_LEFT,
+                rowY - 2,
+                x + TRADE_LEFT + TRADE_WIDTH,
+                rowY + TRADE_ROW_HEIGHT - 2,
+                entry.selected() ? 0xFFFFD45A : 0xFFD9B879
+            );
+        }
         String target = fitText(targetDisplayLabel(payload, entry), TOGGLE_X - 13);
         context.drawText(textRenderer, target, x + 9, rowY, 0xFFFFF2D0, true);
         int itemX = x + INPUT_X;
         int itemY = rowY + 9;
         ItemStack first = entry.offer().firstInput().itemStack()
             .copyWithCount(entry.effectiveFirstCount());
+        drawSlotFrame(context, itemX, itemY - 1);
         drawGhostInput(context, first, entry.offer().firstInput().matches(handler.getCursorStack()), itemX, itemY);
         if (entry.offer().secondInput().isPresent()) {
             context.drawText(textRenderer, "+", itemX + 17, itemY + 4, 0xFFFFF2D0, true);
             ItemStack second = entry.offer().secondInput().get().itemStack()
                 .copyWithCount(entry.effectiveSecondCount());
+            drawSlotFrame(context, x + SECOND_INPUT_X, itemY - 1);
             drawGhostInput(
                 context,
                 second,
@@ -432,6 +459,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             );
         }
         context.drawText(textRenderer, "\u2192", x + 56, itemY + 4, 0xFFFFF2D0, true);
+        drawSlotFrame(context, x + OUTPUT_X, itemY - 1);
         context.drawItem(entry.offer().output(), x + OUTPUT_X, itemY - 1);
         context.drawStackOverlay(textRenderer, entry.offer().output(), x + OUTPUT_X, itemY - 1);
         context.drawText(
@@ -451,16 +479,33 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 0x99606060
             );
         }
+        int toggleFill = entry.enabled() ? 0xFF356A3A : 0xFF555555;
         context.fill(
             x + TOGGLE_X,
             rowY - 1,
             x + TOGGLE_X + 26,
             rowY + TRADE_ROW_HEIGHT - 3,
-            entry.enabled() ? 0xFF356A3A : 0xFF555555
+            0xFF2A1B12
+        );
+        context.fill(
+            x + TOGGLE_X + 1,
+            rowY,
+            x + TOGGLE_X + 25,
+            rowY + TRADE_ROW_HEIGHT - 4,
+            toggleFill
+        );
+        context.fill(
+            x + TOGGLE_X + 2,
+            rowY + 1,
+            x + TOGGLE_X + 24,
+            rowY + 2,
+            entry.enabled() ? 0xFF5C985F : 0xFF777777
         );
         context.drawCenteredTextWithShadow(
             textRenderer,
-            entry.enabled() ? "ON" : "X",
+            Text.translatable(entry.enabled()
+                ? "merchant_villager.toggle.on"
+                : "merchant_villager.toggle.off"),
             x + TOGGLE_X + 13,
             rowY + 8,
             0xFFFFFFFF
@@ -786,14 +831,14 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
 
     private List<FilterChoice> filterChoices(CataloguePayload payload) {
         List<FilterChoice> choices = new ArrayList<>();
-        choices.add(new FilterChoice("All", ignored -> true));
-        choices.add(new FilterChoice("Enabled", CataloguePayload.Entry::enabled));
-        choices.add(new FilterChoice("Disabled", entry -> !entry.enabled()));
-        choices.add(new FilterChoice("Ready", MerchantPostScreen::isReady));
-        choices.add(new FilterChoice("Missing", entry ->
+        choices.add(new FilterChoice(translated("merchant_villager.filter.all"), ignored -> true));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.enabled"), CataloguePayload.Entry::enabled));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.disabled"), entry -> !entry.enabled()));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.ready"), MerchantPostScreen::isReady));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.missing"), entry ->
             entry.enabled() && !entry.offer().isOutOfStock() && entry.fundableExecutions() <= 0));
-        choices.add(new FilterChoice("Out", entry -> entry.offer().isOutOfStock()));
-        choices.add(new FilterChoice("Wander", entry -> entry.offer().wanderingTrader()));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.out"), entry -> entry.offer().isOutOfStock()));
+        choices.add(new FilterChoice(translated("merchant_villager.filter.wander"), entry -> entry.offer().wanderingTrader()));
         payload.entries().stream()
             .map(entry -> entry.offer().profession())
             .distinct()
@@ -812,7 +857,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             filterButton.setMessage(Text.literal(filters.get(filterIndex).label));
         }
         if (sortButton != null) {
-            sortButton.setMessage(Text.literal(sortMode.label));
+            sortButton.setMessage(Text.translatable(sortMode.key));
         }
     }
 
@@ -944,6 +989,27 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         return text.length() <= max ? text : text.substring(0, Math.max(0, max - 1)) + "\u2026";
     }
 
+    private static String translated(String key) {
+        return Text.translatable(key).getString();
+    }
+
+    private static String displayState(String state) {
+        if (state == null || state.isBlank()) {
+            return translated("merchant_villager.state.unknown");
+        }
+        String[] words = state.toLowerCase(Locale.ROOT).split("_");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+            if (!word.isEmpty()) {
+                result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
+        }
+        return result.toString();
+    }
+
     private String fitText(String text, int maxWidth) {
         if (textRenderer.getWidth(text) <= maxWidth) {
             return text;
@@ -965,17 +1031,17 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     }
 
     private enum SortMode {
-        READY("Ready"),
-        DISTANCE("Near"),
-        PROFESSION("Job"),
-        INPUT("Input"),
-        OUTPUT("Output"),
-        REMAINING("Uses");
+        READY("merchant_villager.sort.ready"),
+        DISTANCE("merchant_villager.sort.near"),
+        PROFESSION("merchant_villager.sort.job"),
+        INPUT("merchant_villager.sort.input"),
+        OUTPUT("merchant_villager.sort.output"),
+        REMAINING("merchant_villager.sort.uses");
 
-        private final String label;
+        private final String key;
 
-        SortMode(String label) {
-            this.label = label;
+        SortMode(String key) {
+            this.key = key;
         }
 
         private SortMode next() {

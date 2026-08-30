@@ -79,11 +79,7 @@ tasks.register("verifyReleaseJar") {
     dependsOn tasks.named("remapJar")
 
     def releaseJar = tasks.named("remapJar").flatMap { it.archiveFile }
-    def modrinthThumbnail = layout.projectDirectory.file(
-        "art/merchant-villager-project-thumbnail-v2.png"
-    )
     inputs.file(releaseJar)
-    inputs.file(modrinthThumbnail)
 
     doLast {
         def requiredEntries = [
@@ -150,15 +146,6 @@ tasks.register("verifyReleaseJar") {
             }
         } finally {
             zip.close()
-        }
-
-        def thumbnailFile = modrinthThumbnail.asFile
-        if (thumbnailFile.length() > 256 * 1024) {
-            throw new GradleException("Modrinth thumbnail exceeds 256 KiB: ${thumbnailFile.length()} bytes")
-        }
-        def thumbnail = javax.imageio.ImageIO.read(thumbnailFile)
-        if (thumbnail == null || thumbnail.width != 256 || thumbnail.height != 256) {
-            throw new GradleException("Modrinth thumbnail must be a readable 256x256 image")
         }
     }
 }
