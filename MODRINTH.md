@@ -65,8 +65,9 @@ Do not upload the reference texture ZIP files or development/run directories.
   generated source image, or the derived Fabric icon to the Modrinth project
   page. Modrinth's August 13, 2026 rules prohibit AI-generated or AI-derived
   images in project icons, gallery entries, descriptions, and changelogs.
-- A new project icon made directly by the human project author is required
-  before submission. Record its source and authorship here before uploading it.
+- If the project uses an icon, it must be made directly by the human project
+  author; otherwise submit without a project icon. Record the source and
+  authorship here before uploading any replacement.
 - `art/screenshots/merchant-post-gui.png` is a deterministic in-game capture of
   the real GUI and does not contain the AI-derived Merchant clothing. It is the
   safest current gallery candidate (title: `Merchant's Post trade control`).
@@ -99,6 +100,7 @@ rules; this is an author judgment that automated checks cannot make.
 - Confirm the project title contains only the project name and the summary does
   not repeat it.
 - Confirm the description remains readable without relying on images.
-- Confirm a human-authored, non-AI-generated project icon is being used.
+- Confirm any project icon is human-authored and non-AI-generated, or leave the
+  project icon empty.
 - Confirm `Contains AI-generated content` is selected and accurately described.
 - Check https://modrinth.com/legal/rules immediately before submission.
