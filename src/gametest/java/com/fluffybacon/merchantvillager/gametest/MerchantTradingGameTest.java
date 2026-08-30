@@ -467,6 +467,100 @@ public final class MerchantTradingGameTest {
         });
     }
 
+    @GameTest(maxTicks = 800, skyAccess = true)
+    public void resourcesInImportAreFullyConvertedToEmeralds(TestContext context) {
+        createFloor(context);
+        BlockPos postPos = new BlockPos(3, 1, 2);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(postPos.west(), Blocks.CHEST);
+        context.setBlockState(postPos.east(), Blocks.CHEST);
+
+        VillagerEntity worker = spawnVillager(context, new BlockPos(3, 1, 3));
+        VillagerEntity target = spawnVillager(context, new BlockPos(6, 1, 3));
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer paper = new TradeOffer(
+            new TradedItem(Items.PAPER, 23), Optional.empty(), new ItemStack(Items.EMERALD), 1, 2, 0.05F
+        );
+        TradeOffer wheat = new TradeOffer(
+            new TradedItem(Items.WHEAT, 19), Optional.empty(), new ItemStack(Items.EMERALD), 1, 3, 0.07F
+        );
+        TradeOffer sticks = new TradeOffer(
+            new TradedItem(Items.STICK, 31), Optional.empty(), new ItemStack(Items.EMERALD), 1, 4, 0.09F
+        );
+        target.getOffers().add(paper);
+        target.getOffers().add(wheat);
+        target.getOffers().add(sticks);
+        prepareWorker(context, worker, postPos);
+
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        post.getOffers().stream()
+            .filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .forEach(snapshot -> post.setOfferEnabledInternal(snapshot.fingerprint(), true));
+
+        boolean[] sawRewardReview = {false};
+        context.runAtTick(5, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            Inventory export = post.getExportInventory(context.getWorld());
+            context.assertTrue(source != null, "Two touching chests must produce an Import inventory");
+            context.assertTrue(export != null, "Two touching chests must produce an Export inventory");
+            source.setStack(0, new ItemStack(Items.PAPER, 23));
+            source.setStack(1, new ItemStack(Items.WHEAT, 19));
+            source.setStack(2, new ItemStack(Items.STICK, 31));
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario=resources_to_emeralds phase=loaded import_paper={} "
+                    + "import_wheat={} import_sticks={} export_emeralds={}",
+                source.count(Items.PAPER), source.count(Items.WHEAT), source.count(Items.STICK),
+                export.count(Items.EMERALD)
+            );
+        });
+
+        context.runAtEveryTick(() -> {
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            if (!sawRewardReview[0] && state.state() == MerchantState.REVIEWING_REWARDS) {
+                sawRewardReview[0] = true;
+                int cargoEmeralds = state.cargo().stream()
+                    .filter(stack -> stack.isOf(Items.EMERALD))
+                    .mapToInt(ItemStack::getCount)
+                    .sum();
+                MerchantVillagerMod.LOGGER.info(
+                    "GAME_TEST_EVIDENCE scenario=resources_to_emeralds phase=rewards_received "
+                        + "uses={}/{}/{} cargo_emeralds={}",
+                    paper.getUses(), wheat.getUses(), sticks.getUses(), cargoEmeralds
+                );
+            }
+        });
+
+        context.runAtTick(700, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            Inventory export = post.getExportInventory(context.getWorld());
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            int cargoItems = state.cargo().stream()
+                .filter(stack -> !stack.isEmpty())
+                .mapToInt(ItemStack::getCount)
+                .sum();
+            int remainingInputs = source.count(Items.PAPER) + source.count(Items.WHEAT) + source.count(Items.STICK)
+                + post.count(Items.PAPER) + post.count(Items.WHEAT) + post.count(Items.STICK);
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario=resources_to_emeralds phase=final uses={}/{}/{} "
+                    + "remaining_inputs={} export_emeralds={} cargo_items={} state={} failure={}",
+                paper.getUses(), wheat.getUses(), sticks.getUses(), remainingInputs,
+                export.count(Items.EMERALD), cargoItems, state.state(),
+                state.lastFailure().isBlank() ? "none" : state.lastFailure()
+            );
+            context.assertEquals(1, paper.getUses(), "Paper trade must execute exactly once");
+            context.assertEquals(1, wheat.getUses(), "Wheat trade must execute exactly once");
+            context.assertEquals(1, sticks.getUses(), "Stick trade must execute exactly once");
+            context.assertEquals(0, remainingInputs, "Every loaded resource must be consumed exactly once");
+            context.assertEquals(3, export.count(Items.EMERALD), "Export must contain all three emerald rewards");
+            context.assertEquals(0, cargoItems, "All rewards must leave Merchant Cargo after delivery");
+            context.assertTrue(sawRewardReview[0], "Emerald rewards must be visible in Merchant Cargo before delivery");
+            context.complete();
+        });
+    }
+
     @GameTest(maxTicks = 250, skyAccess = true)
     public void disappearingTargetDuringGreetingReturnsInputWithoutReward(TestContext context) {
         createFloor(context);
