@@ -1426,6 +1426,7 @@ public final class MerchantTradingGameTest {
         );
         boolean[] configured = {false};
         long[] movementStart = {-1L};
+        long[] travellingStart = {-1L};
         double[] maximumWorkerDistance = {0.0};
         boolean[] completed = {false};
         boolean[] routeActivated = {false};
@@ -1490,12 +1491,20 @@ public final class MerchantTradingGameTest {
                 } else {
                     target.setVelocity(Vec3d.ZERO);
                 }
-                if (movementStart[0] < 0L || context.getTick() - movementStart[0] < 1300L) {
+                MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+                if (travellingStart[0] < 0L && state.state() == MerchantState.TRAVELLING_TO_TARGET) {
+                    travellingStart[0] = context.getTick();
+                }
+                boolean deliverySettled = offer.getUses() == 1
+                    && context.getBlockEntity(chestPos, ChestBlockEntity.class)
+                        .count(Items.HEART_OF_THE_SEA) == 1;
+                if (!deliverySettled
+                    && (travellingStart[0] < 0L
+                        || context.getTick() - travellingStart[0] < 1600L)) {
                     return;
                 }
                 completed[0] = true;
                 removeRouteTicket.run();
-                MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
                 String diagnostics = " (state=" + state.state()
                 + ", status=" + state.status()
                 + ", failure=" + state.lastFailure()
