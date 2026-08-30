@@ -24,6 +24,30 @@ jobs:
       - name: Verify mod and gameplay loop
         run: ./gradlew build --no-daemon --stacktrace
 
+      - name: Surface GameTest failure details
+        if: failure()
+        shell: bash
+        run: |
+          log=build/run/gameTest/logs/latest.log
+          if [[ -f "$log" ]]; then
+            grep -Ei 'failed|failure|assert|timed out|expected|error' "$log" \
+              | tail -n 20 \
+              | while IFS= read -r line; do
+                  echo "::error title=GameTest log::$line"
+                done
+          fi
+
+      - name: Upload server test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: merchant-server-test-${{ github.run_attempt }}
+          path: |
+            build/run/gameTest/logs
+            build/test-results
+            build/reports/tests
+          if-no-files-found: warn
+
   client-gui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
