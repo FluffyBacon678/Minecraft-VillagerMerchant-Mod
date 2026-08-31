@@ -1,6 +1,6 @@
 # Modrinth release checklist
 
-This file records the intended Modrinth metadata for the 1.1.0 release-candidate cycle. It is
+This file records the intended Modrinth metadata for the 1.1.0 release. It is
 not a substitute for checking the current Modrinth Content Rules before each
 upload.
 
@@ -21,15 +21,15 @@ Use the English, plain-text content in `README.md` as the basis of the long
 description. Keep the requirements and touching-chest storage boundary visible
 on the project page.
 
-## Version 1.1.0-rc.1
+## Version 1.1.0
 
-- Version number: `1.1.0-rc.1`
-- Version title: `Merchant Villager 1.1.0 RC 1`
-- Release channel: Beta
+- Version number: `1.1.0`
+- Version title: `Merchant Villager 1.1.0`
+- Release channel: Release
 - Loader: Fabric
 - Game version: Minecraft 1.21.11 only
 - Environment: Client and server
-- Changelog: use the 1.1.0-rc.1 section of `CHANGELOG.md`
+- Changelog: use the 1.1.0 section of `CHANGELOG.md`
 
 ### Dependency
 
@@ -53,8 +53,8 @@ one dye, and Creative/same-color interactions do not consume it.
 
 ### Files
 
-- Primary: `build/libs/merchant-villager-1.1.0-rc.1.jar`
-- Optional additional file: `build/libs/merchant-villager-1.1.0-rc.1-sources.jar`
+- Primary: `build/libs/merchant-villager-1.1.0.jar`
+- Optional additional file: `build/libs/merchant-villager-1.1.0-sources.jar`
   with file type `Sources JAR`
 
 Do not upload the reference texture ZIP files or development/run directories.
@@ -92,7 +92,7 @@ rules; this is an author judgment that automated checks cannot make.
 
 ## Final checks
 
-- Confirm the primary JAR embeds version `1.1.0-rc.1` in `fabric.mod.json`.
+- Confirm the primary JAR embeds version `1.1.0` in `fabric.mod.json`.
 - Confirm Fabric API appears in the Modrinth version dependency list as
   required.
 - Confirm both client-side and server-side support are marked required.

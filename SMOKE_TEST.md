@@ -1,6 +1,6 @@
-# Merchant Villager 1.1.0-rc.1 smoke test
+# Merchant Villager 1.1.0 release smoke test
 
-Target date: 2026-08-11
+Final verification date: 2026-08-31
 Target instance: `MerchantVillager-RC-Smoke` / display name `Merchant Villager RC Smoke`
 Runtime: Minecraft 1.21.11, Fabric Loader 0.19.3, Fabric API 0.141.6, Java 21
 
@@ -18,7 +18,7 @@ the installed Prism instance.
 | ID | Scenario | Result | Evidence / notes |
 |---|---|---|---|
 | A01 | Java/unit tests | **PASS** | 57/57, zero failures/errors/skips; exact 64x64 profession UV mask, permanent/tint-layer separation, and five-level cloth mask covered |
-| A02 | Full server gameplay suite | **PASS** | 57/57 required GameTests, including Merchant dye interaction and save/reload persistence |
+| A02 | Full server gameplay suite | **PASS** | 62/62 required GameTests, including bidirectional bulk trade loops, Merchant dye interaction, and save/reload persistence |
 | A03 | Repeat server suite for randomized travel/social timing | **PASS** | 57/57 repeat after dye integration; isolated stationary-boundary fixture also passed 3/3 after test-signature isolation |
 | A04 | Real Merchant Post client-screen GameTest | **PASS** | Real renderer/network/cache/UI run succeeded; screenshot hash matches tracked release image |
 | A05 | Production build and release-jar verifier | **PASS** | Clean `build` succeeded; release verifier succeeded; no GameTest entrypoint/classes in production jar |
@@ -28,8 +28,12 @@ the installed Prism instance.
 | A09 | Interactive Merchant Cargo | **PASS** | Cargo is nine real server-authoritative take-only slots; exact partial input and full reward withdrawals clear the correct physical stacks/flags without duplication; real client screen render passed |
 | A10 | Dyeable Merchant clothing | **PASS** | Survival consumes exactly one dye; Creative and same-color interactions consume none; babies and ordinary villagers ignore the feature; selected color survives entity NBT; only the isolated cloth UV mask is tinted |
 
-Final RC artifact: `merchant-villager-1.1.0-rc.1.jar`
-SHA-256: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`
+Final release artifact: `merchant-villager-1.1.0.jar`
+SHA-256: `5E3FA34909850B079402F91D910149C2595D620E19DAA8A89E36A86DCCA4246C`
+
+The final clean build passed all 57 Java tests, all 62 required server
+GameTests, the production-JAR verifier, and the real client-screen GameTest.
+The embedded Fabric metadata reports version `1.1.0`.
 
 ## Manual Prism smoke scenarios
 
@@ -54,9 +58,8 @@ SHA-256: `47AFD139C5C0319F018D5BC50140CB3436897649EB7293CAEB1DAF3F3568DD1E`
 | M17 | Visible reward handoff | PENDING | During the 2-second review window emeralds appear in Merchant Cargo, then move to Export; status shows `Delivered ... to Export chest` for 5 seconds |
 | M18 | Early cargo withdrawal | PENDING | Take or shift-click paper/other reserved inputs and earned emeralds from Merchant Cargo; withdrawn rewards must not later appear again in Export |
 | M19 | Merchant clothing dyes | **PASS** | Blue in Survival consumed exactly one dye; applying blue again consumed none and opened the normal Merchant UI; red and lime in Creative consumed none; only cap/coat cloth changed; lime survived a full save/quit/reload |
-| M20 | Mod Menu and release presentation | **PASS** | Real Mod Menu screen showed the crisp icon, name, version, author, summary, description, Website/Issues/Source links, and no misleading Configure button; the 256x256 thumbnail is readable; a clean client reached the title screen and initialized Merchant Villager with Mod Menu absent |
 
-## Known RC notes
+## Known release notes
 
 - Building the safe vanilla/Wandering catalogue can briefly make the test
   server report roughly two seconds behind during startup/reload.
@@ -190,23 +193,3 @@ cases.
 - Evidence: `art/screenshots/smoke-merchant-blue-dye.png`,
   `smoke-merchant-red-dye.png`, `smoke-merchant-lime-dye.png`, and
   `smoke-merchant-lime-after-reload.png`.
-
-### 2026-08-13 Mod Menu and release-presentation smoke
-
-- The installed RC rendered a crisp project icon and the expected
-  `Merchant Villager` / `v1.1.0-rc.1` / `FluffyBacon` identity in Mod Menu.
-  The summary and full description were readable without clipping at the
-  smoke instance's normal 854x480 window size.
-- Website, Issues, and Source were present and their configured GitHub targets
-  were reachable. No Configure button appeared, which matches the intentional
-  per-Post controls and absence of a global settings screen.
-- `art/merchant-villager-project-thumbnail-v2.png` was visually reviewed and
-  verified as a readable 256x256 RGBA PNG at 106,467 bytes, below the 256 KiB
-  release limit.
-- A separate clean Fabric client loaded only Fabric API and Merchant Villager:
-  Mod Menu was absent from the loader list, Merchant Villager initialized, all
-  client atlases loaded, the title screen became responsive, and the client
-  stopped normally. Authentication-only Realms warnings from the development
-  launch were unrelated to mod loading.
-- Evidence: `art/screenshots/smoke-mod-menu-listing.png` and
-  `smoke-modmenu-optional-launch.png`.

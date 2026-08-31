@@ -2,7 +2,7 @@
 
 Notable user-facing changes to Merchant Villager are recorded here.
 
-## 1.1.0-rc.1 - 2026-08-09
+## 1.1.0 - 2026-08-31
 
 ### Added
 
