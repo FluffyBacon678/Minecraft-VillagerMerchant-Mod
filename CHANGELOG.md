@@ -2,6 +2,16 @@
 
 Notable user-facing changes to Merchant Villager are recorded here.
 
+## Unreleased — 1.1.1
+
+### Improved
+
+- Catalogue search and keyboard focus survive window resizing and GUI scale changes.
+- Empty-hand clicks on trade input icons toggle approval, matching the rest of
+  the row. Cursor-stack and shift-click material deposits retain their behavior.
+- Inventory slots use recessed borders, large page counters stay clear of
+  navigation buttons, and Disable All is inactive when no trades are enabled.
+
 ## 1.1.0 - 2026-08-31
 
 ### Added

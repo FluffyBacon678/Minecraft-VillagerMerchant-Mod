@@ -15,6 +15,7 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.EntityEquipment;
@@ -140,6 +141,23 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
         });
         context.waitTicks(2);
         context.takeScreenshot("merchant-post-non-origin-compact");
+
+        context.runOnClient(client -> {
+            MerchantPostScreen screen = (MerchantPostScreen) client.currentScreen;
+            TextFieldWidget search = screen.children().stream()
+                .filter(TextFieldWidget.class::isInstance)
+                .map(TextFieldWidget.class::cast).findFirst().orElseThrow();
+            search.setText("paper");
+            screen.setFocused(search);
+            screen.resize(screen.width, screen.height);
+            TextFieldWidget resizedSearch = screen.children().stream()
+                .filter(TextFieldWidget.class::isInstance)
+                .map(TextFieldWidget.class::cast).findFirst().orElseThrow();
+            if (!resizedSearch.getText().equals("paper") || !resizedSearch.isFocused()) {
+                throw new AssertionError("Resizing lost the catalogue search or keyboard focus");
+            }
+            assertScreenState(screen, decodedPostPos, 41);
+        });
 
         // Reopening the same physical post starts a new cache session. A new
         // block entity can legitimately restart its revision counter at one.

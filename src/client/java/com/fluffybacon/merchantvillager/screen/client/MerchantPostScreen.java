@@ -45,6 +45,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private TextFieldWidget search;
     private ButtonWidget filterButton;
     private ButtonWidget sortButton;
+    private ButtonWidget disableAllButton;
     private ButtonWidget previousPageButton;
     private ButtonWidget nextPageButton;
     private boolean sessionStarted;
@@ -63,6 +64,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
 
     @Override
     protected void init() {
+        String previousSearch = search == null ? "" : search.getText();
         super.init();
         if (!sessionStarted) {
             ClientCatalogueCache.beginSession(handler.getPostPos());
@@ -78,6 +80,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         );
         search.setMaxLength(64);
         search.setPlaceholder(Text.translatable("merchant_villager.search"));
+        search.setText(previousSearch);
         search.setChangedListener(ignored -> page = 0);
         addDrawableChild(search);
 
@@ -98,7 +101,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }).dimensions(x + 192, y + 3, 36, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.sort")))
             .build());
-        addDrawableChild(ButtonWidget.builder(Text.translatable("merchant_villager.disable_all"), button -> {
+        disableAllButton = addDrawableChild(ButtonWidget.builder(Text.translatable("merchant_villager.disable_all"), button -> {
             CataloguePayload payload = catalogue();
             if (payload != null) {
                 ClientPlayNetworking.send(new DisableAllOffersPayload(payload.postPos()));
@@ -106,6 +109,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }).dimensions(x + 230, y + 3, 52, 18)
             .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.disable_all")))
             .build());
+        disableAllButton.active = false;
         addDrawableChild(ButtonWidget.builder(Text.literal("\u21bb"), button -> {
             CataloguePayload payload = catalogue();
             if (payload != null) {
@@ -125,6 +129,15 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             page = Math.min(pages - 1, page + 1);
         }).dimensions(x + 126, y + 151, 20, 18).build());
         updatePageButtons(1);
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        boolean restoreSearchFocus = search != null && search.isFocused();
+        super.resize(width, height);
+        if (restoreSearchFocus) {
+            setFocused(search);
+        }
     }
 
     @Override
@@ -154,6 +167,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             false
         );
         CataloguePayload payload = catalogue();
+        disableAllButton.active = payload != null && payload.enabledCount() > 0;
         if (payload == null) {
             updatePageButtons(1);
             context.drawText(
@@ -186,9 +200,9 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }
         context.drawText(
             textRenderer,
-            Text.translatable(
+            fitText(Text.translatable(
                 "merchant_villager.page_summary", page + 1, pages, entries.size(), payload.entries().size()
-            ),
+            ).getString(), 90),
             x + 8,
             y + 156,
             0xFF403020,
@@ -367,8 +381,8 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private static void drawSlotFrame(DrawContext context, int slotX, int slotY) {
         context.fill(slotX - 1, slotY - 1, slotX + 17, slotY + 17, 0xFF3A281A);
         context.fill(slotX, slotY, slotX + 16, slotY + 16, 0xFFC2A675);
-        context.fill(slotX, slotY, slotX + 16, slotY + 1, 0xFFE2C998);
-        context.fill(slotX, slotY, slotX + 1, slotY + 16, 0xFFE2C998);
+        context.fill(slotX - 1, slotY + 16, slotX + 17, slotY + 17, 0xFFE2C998);
+        context.fill(slotX + 16, slotY - 1, slotX + 17, slotY + 17, 0xFFE2C998);
     }
 
     private static void drawOutline(
@@ -539,11 +553,13 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 CataloguePayload.Entry entry = entries.get(start + row);
                 int itemX = x + INPUT_X;
                 int itemY = rowY + 8;
-                if (inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
+                boolean depositing = !handler.getCursorStack().isEmpty()
+                    || (click.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
+                if (depositing && inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
                     sendDeposit(payload, entry, 0, click);
                     return true;
                 }
-                if (entry.offer().secondInput().isPresent()
+                if (depositing && entry.offer().secondInput().isPresent()
                     && inside(mouseX, mouseY, x + SECOND_INPUT_X, itemY, 16, 16)) {
                     sendDeposit(payload, entry, 1, click);
                     return true;

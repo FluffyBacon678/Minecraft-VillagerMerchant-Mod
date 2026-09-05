@@ -1,5 +1,9 @@
 # Merchant Villager 1.1.0 release smoke test
 
+Current follow-up: see [Release readiness](RELEASE_READINESS.md) for the
+`1.1.1-dev.1` polish build, verified artifact, and outstanding acceptance cases.
+The results below remain the historical 1.1.0/RC evidence.
+
 Final verification date: 2026-08-31
 Target instance: `MerchantVillager-RC-Smoke` / display name `Merchant Villager RC Smoke`
 Runtime: Minecraft 1.21.11, Fabric Loader 0.19.3, Fabric API 0.141.6, Java 21
