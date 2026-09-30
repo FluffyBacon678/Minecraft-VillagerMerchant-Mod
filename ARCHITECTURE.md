@@ -50,6 +50,12 @@ from the read-only client preview and reported as summarized, while the
 server's real cargo remains exact. Every payload has a final 128 KiB guard.
 The client never creates or consumes trade stacks.
 
+Menu-action cooldowns are independent per player and action; only requests for
+the matching, currently usable open post consume their budget. The client
+caches its filtered and sorted catalogue view by immutable row-list identity,
+normalized search, filter, sort, and language. Telemetry-only updates retain
+the row list and reuse the view; row replacements and deltas invalidate it.
+
 `ReservationManager` is per-server, target-exclusive, and expiring. Removed post items are the
 only material source of truth; reservations never contain duplicate stacks.
 Worker cargo drops once on death and otherwise persists through ordinary

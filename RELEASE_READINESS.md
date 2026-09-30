@@ -2,11 +2,27 @@
 
 ## Current candidate
 
-`1.1.1-dev.1` adds menu usability fixes after the tagged `v1.1.0` source release.
-The tag remains historical evidence; it does not establish that every manual
+`1.1.1-dev.2` adds catalogue-view caching and independent server menu-action
+cooldowns after the menu usability fixes in `1.1.1-dev.1`.
+The `v1.1.0` tag remains historical evidence; it does not establish that every manual
 smoke scenario passed. See `SMOKE_TEST.md` for individual recorded results.
 
-Verification on 2026-09-05:
+## Current verification: 1.1.1-dev.2 (2026-09-30)
+
+- `build runClientGameTest` passed with Java 21.
+- Java tests: 62 passed, zero failures, errors, or skips. Five new regressions
+  cover independent action/player cooldowns, unauthorized requests, interval
+  boundaries, and a rewound clock.
+- Server GameTests: all 62 required tests passed; both conversion fixtures
+  finished with exact Export contents and no remaining inputs or cargo.
+- Client screen test: passed, including cached-view reuse for telemetry,
+  normalized search, same-revision replacement rows, filters, and sorting.
+- Production-JAR verification: passed; embedded version is `1.1.1-dev.2`.
+- GUI screenshot: byte-for-byte identical to the tracked menu capture.
+- Artifact: `build/libs/merchant-villager-1.1.1-dev.2.jar`.
+- SHA-256: `79640325A4501887C1148514619B587F95D338546A00F54EB543B71EC4A34DF2`.
+
+## Previous verification: 1.1.1-dev.1 (2026-09-05)
 
 - Java tests: 57 passed, zero failures or errors.
 - Server GameTests: 62 required tests passed. Resource conversion ended with

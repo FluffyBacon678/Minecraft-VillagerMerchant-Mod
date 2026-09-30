@@ -11,6 +11,14 @@ Notable user-facing changes to Merchant Villager are recorded here.
   the row. Cursor-stack and shift-click material deposits retain their behavior.
 - Inventory slots use recessed borders, large page counters stay clear of
   navigation buttons, and Disable All is inactive when no trades are enabled.
+- Catalogue filtering and sorting reuse a cached view across frames and
+  telemetry updates; changed trades, search, filters, sort, and language still
+  update the view immediately.
+
+### Reliability
+
+- Refresh and Disable All use independent server cooldowns, applied only after
+  the player is verified to have the matching usable Merchant's Post open.
 
 ## 1.1.0 - 2026-08-31
 

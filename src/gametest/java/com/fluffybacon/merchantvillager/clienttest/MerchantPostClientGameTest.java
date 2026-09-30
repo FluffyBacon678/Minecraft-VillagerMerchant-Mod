@@ -15,7 +15,9 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.input.MouseInput;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
 import net.minecraft.entity.EntityEquipment;
@@ -137,6 +139,7 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos.east(), 99)));
             ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos, 39)));
             assertScreenState(client.currentScreen, decodedPostPos, 41);
+            assertCatalogueViewCaching((MerchantPostScreen) client.currentScreen);
             assertHeavyCargoIsBounded(decodedPostPos);
         });
         context.waitTicks(2);
@@ -190,6 +193,97 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             return ModScreenHandlers.MERCHANT_POST.getPacketCodec().decode(buffer);
         } finally {
             buffer.release();
+        }
+    }
+
+    private static void assertCatalogueViewCaching(MerchantPostScreen screen) {
+        CataloguePayload original = ClientCatalogueCache.latest();
+        TextFieldWidget search = screen.children().stream()
+            .filter(TextFieldWidget.class::isInstance)
+            .map(TextFieldWidget.class::cast).findFirst().orElseThrow();
+        List<CataloguePayload.Entry> all = visibleEntries(screen, original);
+        if (visibleEntries(screen, original) != all) {
+            throw new AssertionError("Unchanged catalogue view was rebuilt");
+        }
+        ClientCatalogueCache.accept(new CataloguePayload(
+            original.postPos(), original.revision(), original.workerUuid(), original.workerState(),
+            original.status(), original.lastFailure(), original.targetCount(),
+            original.enabledCount(), original.executableCount(), original.workerStats(),
+            false, 0, 0, List.of()
+        ));
+        if (visibleEntries(screen, ClientCatalogueCache.latest()) != all) {
+            throw new AssertionError("Telemetry-only update rebuilt unchanged catalogue rows");
+        }
+        search.setText("wheat");
+        List<CataloguePayload.Entry> wheat = visibleEntries(screen, original);
+        if (wheat.size() != 1 || !wheat.getFirst().offer().firstInput().itemStack().isOf(Items.WHEAT)) {
+            throw new AssertionError("Changing search did not invalidate the catalogue view");
+        }
+        search.setText(" WHEAT ");
+        if (visibleEntries(screen, original) != wheat) {
+            throw new AssertionError("Equivalent normalized searches rebuilt the catalogue view");
+        }
+        // A replacement baseline must refresh item-name search even when its
+        // revision matches (the cache is keyed by immutable rows, not revision).
+        CataloguePayload replacement = catalogue(original.postPos(), original.revision());
+        search.setText("diamond");
+        if (visibleEntries(screen, original).size() != 1
+            || !visibleEntries(screen, replacement).isEmpty()) {
+            throw new AssertionError("Replacement rows did not invalidate item-name search");
+        }
+        search.setText("");
+        ButtonWidget filter = screen.children().stream()
+            .filter(ButtonWidget.class::isInstance).map(ButtonWidget.class::cast)
+            .filter(button -> button.getMessage().getString().equals(
+                Text.translatable("merchant_villager.filter.all").getString()
+            )).findFirst().orElseThrow();
+        filter.onPress(new MouseInput(0, 0));
+        List<CataloguePayload.Entry> enabled = visibleEntries(screen, original);
+        List<CataloguePayload.Entry> replacementEnabled = visibleEntries(screen, replacement);
+        if (enabled.stream().anyMatch(entry -> !entry.enabled())
+            || enabled.stream().noneMatch(entry -> entry.offer().offerIndex() == 1
+                && entry.offer().targetUuid().equals(LIBRARIAN_UUID))
+            || replacementEnabled.stream().anyMatch(entry -> entry.offer().offerIndex() == 1
+                && entry.offer().targetUuid().equals(LIBRARIAN_UUID))) {
+            throw new AssertionError("Filter change did not invalidate the catalogue view");
+        }
+        // Seven built-in filters plus two professions in this fixture.
+        for (int index = 0; index < 8; index++) {
+            filter.onPress(new MouseInput(0, 0));
+        }
+        ButtonWidget sort = screen.children().stream()
+            .filter(ButtonWidget.class::isInstance).map(ButtonWidget.class::cast)
+            .filter(button -> button.getMessage().getString().equals(
+                Text.translatable("merchant_villager.sort.ready").getString()
+            )).findFirst().orElseThrow();
+        List<CataloguePayload.Entry> ready = visibleEntries(screen, original);
+        sort.onPress(new MouseInput(0, 0));
+        List<CataloguePayload.Entry> nearest = visibleEntries(screen, original);
+        if (nearest == ready) {
+            throw new AssertionError("Sort change reused the previous catalogue view");
+        }
+        for (int index = 1; index < nearest.size(); index++) {
+            if (nearest.get(index - 1).offer().distanceSquared()
+                > nearest.get(index).offer().distanceSquared()) {
+                throw new AssertionError("Sort change did not invalidate the catalogue view");
+            }
+        }
+        for (int index = 0; index < 5; index++) {
+            sort.onPress(new MouseInput(0, 0));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<CataloguePayload.Entry> visibleEntries(
+        MerchantPostScreen screen, CataloguePayload payload
+    ) {
+        // Inspect the production projection without exposing a test-only GUI API.
+        try {
+            var method = MerchantPostScreen.class.getDeclaredMethod("visibleEntries", CataloguePayload.class);
+            method.setAccessible(true);
+            return (List<CataloguePayload.Entry>) method.invoke(screen, payload);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError("Unable to inspect the catalogue view", exception);
         }
     }
 

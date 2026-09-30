@@ -23,6 +23,7 @@ import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Language;
 import org.lwjgl.glfw.GLFW;
 
 public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHandler> {
@@ -49,6 +50,13 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
     private ButtonWidget previousPageButton;
     private ButtonWidget nextPageButton;
     private boolean sessionStarted;
+    private List<CataloguePayload.Entry> cachedRowSource;
+    private Language cachedLanguage;
+    private List<FilterChoice> cachedFilters = List.of();
+    private List<CataloguePayload.Entry> cachedVisibleEntries = List.of();
+    private String cachedQuery;
+    private int cachedFilterIndex = -1;
+    private SortMode cachedSortMode;
 
     public MerchantPostScreen(
         MerchantPostScreenHandler handler, PlayerInventory inventory, Text title
@@ -726,35 +734,6 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         }
     }
 
-    private void renderCargoTooltip(DrawContext context, int mouseX, int mouseY) {
-        CataloguePayload payload = catalogue();
-        if (payload == null || payload.workerStats().isEmpty()) {
-            return;
-        }
-        List<ItemStack> cargo = payload.workerStats().get().cargo();
-        for (int index = 0; index < Math.min(9, cargo.size()); index++) {
-            ItemStack stack = cargo.get(index);
-            int itemX = x + CARGO_X + index % 3 * 18;
-            int itemY = y + CARGO_Y + index / 3 * 18;
-            if (!stack.isEmpty() && inside(mouseX, mouseY, itemX, itemY, 16, 16)) {
-                List<Text> tooltip = new ArrayList<>();
-                tooltip.add(stack.getName());
-                if ((payload.workerStats().get().rewardSlotMask() & 1 << index) != 0) {
-                    tooltip.add(Text.literal("Trade result — waiting for Export").formatted(Formatting.GOLD));
-                } else {
-                    tooltip.add(Text.literal("Reserved trade input").formatted(Formatting.GRAY));
-                }
-                if (payload.workerStats().get().cargoSummarized()) {
-                    tooltip.add(Text.literal(
-                        "Large item components are hidden in this read-only preview"
-                    ).formatted(Formatting.DARK_GRAY));
-                }
-                context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
-                return;
-            }
-        }
-    }
-
     private void renderStatusTooltip(DrawContext context, int mouseX, int mouseY) {
         CataloguePayload payload = catalogue();
         if (payload == null || !inside(mouseX, mouseY, x + 6, y + 171, 140, 66)) {
@@ -837,15 +816,30 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         filterIndex = Math.floorMod(filterIndex, filters.size());
         Predicate<CataloguePayload.Entry> filter = filters.get(filterIndex).predicate;
         String query = search == null ? "" : search.getText().strip().toLowerCase(Locale.ROOT);
+        if (query.equals(cachedQuery)
+            && filterIndex == cachedFilterIndex
+            && sortMode == cachedSortMode) {
+            return cachedVisibleEntries;
+        }
         Comparator<CataloguePayload.Entry> comparator = sortMode.comparator();
-        return payload.entries().stream()
+        cachedVisibleEntries = payload.entries().stream()
             .filter(filter)
             .filter(entry -> matchesSearch(entry, query))
             .sorted(comparator.thenComparing(defaultComparator()))
             .toList();
+        cachedQuery = query;
+        cachedFilterIndex = filterIndex;
+        cachedSortMode = sortMode;
+        return cachedVisibleEntries;
     }
 
     private List<FilterChoice> filterChoices(CataloguePayload payload) {
+        Language language = Language.getInstance();
+        // Cache immutable rows, not packet identity: telemetry-only updates reuse
+        // the row list, while baselines/deltas and language reloads invalidate it.
+        if (payload.entries() == cachedRowSource && language == cachedLanguage) {
+            return cachedFilters;
+        }
         List<FilterChoice> choices = new ArrayList<>();
         choices.add(new FilterChoice(translated("merchant_villager.filter.all"), ignored -> true));
         choices.add(new FilterChoice(translated("merchant_villager.filter.enabled"), CataloguePayload.Entry::enabled));
@@ -863,7 +857,11 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
                 shortText(displayProfession(profession), 7),
                 entry -> entry.offer().profession().equals(profession)
             )));
-        return choices;
+        cachedRowSource = payload.entries();
+        cachedLanguage = language;
+        cachedFilters = List.copyOf(choices);
+        cachedQuery = null;
+        return cachedFilters;
     }
 
     private void updateControlLabels(CataloguePayload payload) {

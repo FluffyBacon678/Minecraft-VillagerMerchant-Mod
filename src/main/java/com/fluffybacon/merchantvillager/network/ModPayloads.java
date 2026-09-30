@@ -5,6 +5,7 @@ import com.fluffybacon.merchantvillager.blockentity.MerchantPostBlockEntity;
 import com.fluffybacon.merchantvillager.inventory.OutputChestFinder;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.merchant.MerchantWorkerState;
+import com.fluffybacon.merchantvillager.screen.MerchantPostScreenHandler;
 import com.fluffybacon.merchantvillager.trade.GlobalTradeCatalogue;
 import com.fluffybacon.merchantvillager.trade.OfferSnapshot;
 import com.fluffybacon.merchantvillager.trade.TradeProvider;
@@ -38,9 +39,8 @@ public final class ModPayloads {
     private static final UUID GLOBAL_ROW_UUID = new UUID(0L, 0L);
     private static final int MAX_ENCODED_ROWS_BYTES_PER_CHUNK = 96 * 1024;
     private static final int MAX_SAFE_PLAY_PAYLOAD_BYTES = 128 * 1024;
-    private static final Map<ServerPlayerEntity, Long> LAST_TOGGLE_TICK = new WeakHashMap<>();
-    private static final Map<ServerPlayerEntity, Long> LAST_REFRESH_TICK = new WeakHashMap<>();
-    private static final Map<ServerPlayerEntity, Long> LAST_DISABLE_ALL_TICK = new WeakHashMap<>();
+    private static final MerchantPostRequestLimiter<ServerPlayerEntity> REQUEST_LIMITER =
+        new MerchantPostRequestLimiter<>();
     private static final Map<ServerPlayerEntity, ViewerCatalogueState> VIEWER_CATALOGUES =
         new WeakHashMap<>();
 
@@ -61,34 +61,27 @@ public final class ModPayloads {
         ServerPlayNetworking.registerGlobalReceiver(ToggleOfferPayload.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
             if (payload.fingerprint().length() < 64
-                || payload.fingerprint().length() > 80
-                || !allowAtInterval(player, LAST_TOGGLE_TICK, 4)
-                || player.squaredDistanceTo(payload.postPos().toCenterPos()) > 64.0
-                || !(player.getEntityWorld() instanceof ServerWorld world)
-                || !(world.getBlockEntity(payload.postPos()) instanceof MerchantPostBlockEntity post)) {
+                || payload.fingerprint().length() > 80) {
                 return;
             }
-            post.setOfferEnabled(player, payload.fingerprint(), payload.enabled());
+            MerchantPostBlockEntity post = controlledPost(player, payload.postPos());
+            if (allowRequest(player, post, MerchantPostRequestLimiter.Action.TOGGLE)) {
+                post.setOfferEnabled(player, payload.fingerprint(), payload.enabled());
+            }
         });
 
         ServerPlayNetworking.registerGlobalReceiver(RefreshCataloguePayload.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
-            if (player.squaredDistanceTo(payload.postPos().toCenterPos()) <= 64.0
-                && allowAtInterval(player, LAST_DISABLE_ALL_TICK, 20)
-                && player.getEntityWorld() instanceof ServerWorld world
-                && world.getBlockEntity(payload.postPos()) instanceof MerchantPostBlockEntity post
-                && player.currentScreenHandler instanceof com.fluffybacon.merchantvillager.screen.MerchantPostScreenHandler handler
-                && handler.getPostPos().equals(payload.postPos())
-                && allowAtInterval(player, LAST_REFRESH_TICK, 20)) {
+            MerchantPostBlockEntity post = controlledPost(player, payload.postPos());
+            if (allowRequest(player, post, MerchantPostRequestLimiter.Action.REFRESH)) {
                 post.refreshCatalogue(true);
             }
         });
 
         ServerPlayNetworking.registerGlobalReceiver(DisableAllOffersPayload.ID, (payload, context) -> {
             ServerPlayerEntity player = context.player();
-            if (player.squaredDistanceTo(payload.postPos().toCenterPos()) <= 64.0
-                && player.getEntityWorld() instanceof ServerWorld world
-                && world.getBlockEntity(payload.postPos()) instanceof MerchantPostBlockEntity post) {
+            MerchantPostBlockEntity post = controlledPost(player, payload.postPos());
+            if (allowRequest(player, post, MerchantPostRequestLimiter.Action.DISABLE_ALL)) {
                 post.disableAllOffers(player);
             }
         });
@@ -765,18 +758,24 @@ public final class ModPayloads {
         }
     }
 
-    private static boolean allowAtInterval(
-        ServerPlayerEntity player,
-        Map<ServerPlayerEntity, Long> lastTicks,
-        long minimumTicks
-    ) {
-        long now = player.getEntityWorld().getTime();
-        Long previous = lastTicks.get(player);
-        if (previous != null && now >= previous && now - previous < minimumTicks) {
-            return false;
+    private static MerchantPostBlockEntity controlledPost(ServerPlayerEntity player, BlockPos pos) {
+        if (player.currentScreenHandler instanceof MerchantPostScreenHandler handler
+            && handler.getPostPos().equals(pos)
+            && handler.canUse(player)
+            && player.getEntityWorld() instanceof ServerWorld world
+            && world.getBlockEntity(pos) instanceof MerchantPostBlockEntity post
+            && post.canPlayerUse(player)) {
+            return post;
         }
-        lastTicks.put(player, now);
-        return true;
+        return null;
+    }
+
+    private static boolean allowRequest(
+        ServerPlayerEntity player, MerchantPostBlockEntity post, MerchantPostRequestLimiter.Action action
+    ) {
+        return REQUEST_LIMITER.allow(
+            player, action, player.getEntityWorld().getTime(), post != null
+        );
     }
 
     private ModPayloads() {
