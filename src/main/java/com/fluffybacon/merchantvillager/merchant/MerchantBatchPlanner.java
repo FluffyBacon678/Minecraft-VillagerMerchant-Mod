@@ -49,7 +49,8 @@ public final class MerchantBatchPlanner {
                         trialRemaining,
                         offer.getFirstBuyItem(),
                         offer.getDisplayedFirstBuyItem().getCount() * possible,
-                        trialReserved
+                        trialReserved,
+                        offer.getSecondBuyItem()
                     )
                     && (offer.getSecondBuyItem().isEmpty()
                         || reserveInto(
@@ -89,15 +90,10 @@ public final class MerchantBatchPlanner {
     }
 
     private static int possibleExecutions(List<ItemStack> inventory, TradeOffer offer) {
-        int possible = TradeInputMatcher.matchingCount(inventory, offer.getFirstBuyItem())
-            / Math.max(1, offer.getDisplayedFirstBuyItem().getCount());
-        if (offer.getSecondBuyItem().isPresent()) {
-            possible = Math.min(
-                possible,
-                TradeInputMatcher.matchingCount(inventory, offer.getSecondBuyItem().get())
-                    / Math.max(1, offer.getDisplayedSecondBuyItem().getCount())
-            );
-        }
+        int possible = TradeInputMatcher.affordableExecutions(
+            inventory, offer.getFirstBuyItem(), offer.getDisplayedFirstBuyItem().getCount(),
+            offer.getSecondBuyItem(), offer.getDisplayedSecondBuyItem().getCount()
+        );
         return Math.max(0, Math.min(possible, offer.getMaxUses() - offer.getUses()));
     }
 
@@ -111,7 +107,8 @@ public final class MerchantBatchPlanner {
                     simulated,
                     trade.firstInput(),
                     trade.firstCount() * trade.executions(),
-                    plannedCargo
+                    plannedCargo,
+                    trade.secondInput()
                 )
                 || (trade.secondInput().isPresent()
                     && !reserveInto(
@@ -133,7 +130,8 @@ public final class MerchantBatchPlanner {
                 post,
                 trade.firstInput(),
                 trade.firstCount() * trade.executions(),
-                extracted
+                extracted,
+                trade.secondInput()
             );
             if (trade.secondInput().isPresent()) {
                 extract(
@@ -158,15 +156,26 @@ public final class MerchantBatchPlanner {
         int count,
         List<ItemStack> extracted
     ) {
+        return reserveInto(inventory, input, count, extracted, Optional.empty());
+    }
+
+    private static boolean reserveInto(
+        List<ItemStack> inventory, TradedItem input, int count,
+        List<ItemStack> extracted, Optional<TradedItem> otherInput
+    ) {
         int remaining = count;
-        for (ItemStack stack : inventory) {
-            if (input.matches(stack)) {
-                int moved = Math.min(remaining, stack.getCount());
-                merge(extracted, stack.copyWithCount(moved));
-                stack.decrement(moved);
-                remaining -= moved;
-                if (remaining == 0) {
-                    return true;
+        // Spend exclusive matches first so the other input retains its only matches.
+        for (int pass = 0; pass < (otherInput.isPresent() ? 2 : 1); pass++) {
+            for (ItemStack stack : inventory) {
+                if (input.matches(stack)
+                    && (otherInput.isEmpty() || otherInput.get().matches(stack) == (pass == 1))) {
+                    int moved = Math.min(remaining, stack.getCount());
+                    merge(extracted, stack.copyWithCount(moved));
+                    stack.decrement(moved);
+                    remaining -= moved;
+                    if (remaining == 0) {
+                        return true;
+                    }
                 }
             }
         }
@@ -176,13 +185,23 @@ public final class MerchantBatchPlanner {
     private static void extract(
         MerchantPostBlockEntity post, TradedItem input, int count, List<ItemStack> extracted
     ) {
+        extract(post, input, count, extracted, Optional.empty());
+    }
+
+    private static void extract(
+        MerchantPostBlockEntity post, TradedItem input, int count,
+        List<ItemStack> extracted, Optional<TradedItem> otherInput
+    ) {
         int remaining = count;
-        for (int slot = 0; slot < post.size() && remaining > 0; slot++) {
-            ItemStack present = post.getStack(slot);
-            if (input.matches(present)) {
-                int moved = Math.min(remaining, present.getCount());
-                merge(extracted, post.removeStack(slot, moved));
-                remaining -= moved;
+        for (int pass = 0; pass < (otherInput.isPresent() ? 2 : 1); pass++) {
+            for (int slot = 0; slot < post.size() && remaining > 0; slot++) {
+                ItemStack present = post.getStack(slot);
+                if (input.matches(present)
+                    && (otherInput.isEmpty() || otherInput.get().matches(present) == (pass == 1))) {
+                    int moved = Math.min(remaining, present.getCount());
+                    merge(extracted, post.removeStack(slot, moved));
+                    remaining -= moved;
+                }
             }
         }
     }

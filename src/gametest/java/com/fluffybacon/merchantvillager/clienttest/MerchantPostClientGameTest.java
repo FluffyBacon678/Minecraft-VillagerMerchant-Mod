@@ -140,10 +140,17 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
             ClientCatalogueCache.accept(roundTripCatalogue(catalogue(decodedPostPos, 39)));
             assertScreenState(client.currentScreen, decodedPostPos, 41);
             assertCatalogueViewCaching((MerchantPostScreen) client.currentScreen);
+            assertProfessionFilterSurvivesCatalogueChanges((MerchantPostScreen) client.currentScreen);
             assertHeavyCargoIsBounded(decodedPostPos);
         });
         context.waitTicks(2);
         context.takeScreenshot("merchant-post-non-origin-compact");
+
+        context.runOnClient(client -> ((MerchantPostScreen) client.currentScreen).children().stream()
+            .filter(TextFieldWidget.class::isInstance).map(TextFieldWidget.class::cast)
+            .findFirst().orElseThrow().setText("zz-no-matching-trade"));
+        context.waitTicks(2);
+        context.takeScreenshot("merchant-post-empty-search");
 
         context.runOnClient(client -> {
             MerchantPostScreen screen = (MerchantPostScreen) client.currentScreen;
@@ -160,7 +167,17 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                 throw new AssertionError("Resizing lost the catalogue search or keyboard focus");
             }
             assertScreenState(screen, decodedPostPos, 41);
+            client.options.getGuiScale().setValue(2);
+            client.onResolutionChanged();
+            TextFieldWidget scaleSearch = screen.children().stream()
+                .filter(TextFieldWidget.class::isInstance).map(TextFieldWidget.class::cast)
+                .findFirst().orElseThrow();
+            if (!scaleSearch.getText().equals("paper") || !scaleSearch.isFocused()) {
+                throw new AssertionError("GUI scale change lost search or keyboard focus");
+            }
         });
+        context.waitTicks(2);
+        context.takeScreenshot("merchant-post-search-scale-2");
 
         // Reopening the same physical post starts a new cache session. A new
         // block entity can legitimately restart its revision counter at one.
@@ -182,6 +199,38 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
                 throw new AssertionError("Closing the Merchant screen did not clear its catalogue cache");
             }
         });
+        context.setScreen(PostPreviewScreen::new);
+        context.waitForScreen(PostPreviewScreen.class);
+        context.waitTicks(3);
+        context.takeScreenshot("merchant-post-block-polish");
+        context.setScreen(TitleScreen::new);
+        context.waitForScreen(TitleScreen.class);
+    }
+
+    /** Uses the actual item renderer, including the production block model and textures. */
+    private static final class PostPreviewScreen extends net.minecraft.client.gui.screen.Screen {
+        private PostPreviewScreen() {
+            super(Text.literal("Merchant's Post block review"));
+        }
+
+        @Override
+        public void render(net.minecraft.client.gui.DrawContext context, int mouseX, int mouseY, float delta) {
+            context.fill(0, 0, width, height, 0xFF242424);
+            context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 35, 0xFFE8E0CC);
+            drawPreview(context, new ItemStack(Items.BARREL), width / 2 - 140, height / 2 - 48);
+            drawPreview(context, new ItemStack(com.fluffybacon.merchantvillager.registry.ModBlocks.MERCHANT_POST_ITEM),
+                width / 2 + 28, height / 2 - 48);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Vanilla barrel"), width / 2 - 92, height / 2 + 62, 0xFFE8E0CC);
+            context.drawCenteredTextWithShadow(textRenderer, Text.literal("Merchant's Post"), width / 2 + 76, height / 2 + 62, 0xFFE8E0CC);
+        }
+
+        private static void drawPreview(net.minecraft.client.gui.DrawContext context, ItemStack stack, int x, int y) {
+            context.getMatrices().pushMatrix();
+            context.getMatrices().translate(x, y);
+            context.getMatrices().scale(6.0F, 6.0F);
+            context.drawItem(stack, 0, 0);
+            context.getMatrices().popMatrix();
+        }
     }
 
     private static BlockPos roundTripOpeningData(BlockPos postPos) {
@@ -271,6 +320,48 @@ public final class MerchantPostClientGameTest implements FabricClientGameTest {
         for (int index = 0; index < 5; index++) {
             sort.onPress(new MouseInput(0, 0));
         }
+    }
+
+    private static void assertProfessionFilterSurvivesCatalogueChanges(MerchantPostScreen screen) {
+        CataloguePayload original = ClientCatalogueCache.latest();
+        ButtonWidget filter = screen.children().stream()
+            .filter(ButtonWidget.class::isInstance).map(ButtonWidget.class::cast)
+            .filter(button -> button.getMessage().getString().equals(
+                Text.translatable("merchant_villager.filter.all").getString()
+            )).findFirst().orElseThrow();
+        // Built-in filters, then farmer and librarian: select librarian.
+        for (int index = 0; index < 8; index++) filter.onPress(new MouseInput(0, 0));
+        List<CataloguePayload.Entry> selected = visibleEntries(screen, original);
+        if (selected.isEmpty() || selected.stream().anyMatch(entry -> !entry.offer().profession().equals("minecraft:librarian"))) {
+            throw new AssertionError("Fixture did not select the librarian filter");
+        }
+        CataloguePayload.Entry first = original.entries().getFirst();
+        OfferSnapshot old = first.offer();
+        OfferSnapshot armorer = new OfferSnapshot(old.targetUuid(), "Armorer", "minecraft:armorer", old.villagerLevel(),
+            old.offerIndex(), old.firstInput(), old.secondInput(), old.output(), old.uses(), old.maxUses(),
+            old.distanceSquared(), old.wanderingTrader(), old.targetAvailable(), old.despawnDelay(), old.fingerprint());
+        List<CataloguePayload.Entry> added = new java.util.ArrayList<>(original.entries());
+        added.add(new CataloguePayload.Entry(armorer, first.enabled(), first.coolingDown(), first.fundableExecutions(),
+            first.selected(), first.storedFirstCount(), first.storedSecondCount(), first.effectiveFirstCount(), first.effectiveSecondCount()));
+        CataloguePayload expanded = withRows(original, added);
+        List<CataloguePayload.Entry> retained = visibleEntries(screen, expanded);
+        if (retained.isEmpty() || retained.stream().anyMatch(entry -> !entry.offer().profession().equals("minecraft:librarian"))) {
+            throw new AssertionError("Adding a profession changed the selected librarian filter");
+        }
+        if (!visibleEntries(screen, original).equals(selected)) {
+            throw new AssertionError("Removing another profession changed the selected librarian filter");
+        }
+        CataloguePayload removed = withRows(original, original.entries().stream()
+            .filter(entry -> !entry.offer().profession().equals("minecraft:librarian")).toList());
+        if (visibleEntries(screen, removed).size() != removed.entries().size()) {
+            throw new AssertionError("A removed profession must safely fall back to All, not an unrelated filter");
+        }
+        visibleEntries(screen, original);
+    }
+
+    private static CataloguePayload withRows(CataloguePayload old, List<CataloguePayload.Entry> rows) {
+        return new CataloguePayload(old.postPos(), old.revision(), old.workerUuid(), old.workerState(), old.status(),
+            old.lastFailure(), old.targetCount(), old.enabledCount(), old.executableCount(), old.workerStats(), true, 0, 1, rows);
     }
 
     @SuppressWarnings("unchecked")

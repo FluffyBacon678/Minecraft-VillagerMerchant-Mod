@@ -88,6 +88,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         );
         search.setMaxLength(64);
         search.setPlaceholder(Text.translatable("merchant_villager.search"));
+        search.setTooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.search")));
         search.setText(previousSearch);
         search.setChangedListener(ignored -> page = 0);
         addDrawableChild(search);
@@ -128,14 +129,16 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
             .build());
         previousPageButton = addDrawableChild(ButtonWidget.builder(
             Text.literal("<"), button -> page = Math.max(0, page - 1)
-        ).dimensions(x + 102, y + 151, 20, 18).build());
+        ).dimensions(x + 102, y + 151, 20, 18)
+            .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.previous_page"))).build());
         nextPageButton = addDrawableChild(ButtonWidget.builder(Text.literal(">"), button -> {
             CataloguePayload payload = catalogue();
             int pages = payload == null
                 ? 1
                 : Math.max(1, (visibleEntries(payload).size() + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
             page = Math.min(pages - 1, page + 1);
-        }).dimensions(x + 126, y + 151, 20, 18).build());
+        }).dimensions(x + 126, y + 151, 20, 18)
+            .tooltip(Tooltip.of(Text.translatable("merchant_villager.tooltip.next_page"))).build());
         updatePageButtons(1);
     }
 
@@ -840,35 +843,58 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         if (payload.entries() == cachedRowSource && language == cachedLanguage) {
             return cachedFilters;
         }
+        String selectedKey = cachedFilters.isEmpty() ? null
+            : cachedFilters.get(Math.floorMod(filterIndex, cachedFilters.size())).key;
         List<FilterChoice> choices = new ArrayList<>();
-        choices.add(new FilterChoice(translated("merchant_villager.filter.all"), ignored -> true));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.enabled"), CataloguePayload.Entry::enabled));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.disabled"), entry -> !entry.enabled()));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.ready"), MerchantPostScreen::isReady));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.missing"), entry ->
+        choices.add(builtinFilter("all", ignored -> true));
+        choices.add(builtinFilter("enabled", CataloguePayload.Entry::enabled));
+        choices.add(builtinFilter("disabled", entry -> !entry.enabled()));
+        choices.add(builtinFilter("ready", MerchantPostScreen::isReady));
+        choices.add(builtinFilter("missing", entry ->
             entry.enabled() && !entry.offer().isOutOfStock() && entry.fundableExecutions() <= 0));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.out"), entry -> entry.offer().isOutOfStock()));
-        choices.add(new FilterChoice(translated("merchant_villager.filter.wander"), entry -> entry.offer().wanderingTrader()));
+        choices.add(builtinFilter("out", entry -> entry.offer().isOutOfStock()));
+        choices.add(builtinFilter("wander", entry -> entry.offer().wanderingTrader()));
         payload.entries().stream()
             .map(entry -> entry.offer().profession())
             .distinct()
             .sorted()
             .forEach(profession -> choices.add(new FilterChoice(
-                shortText(displayProfession(profession), 7),
+                "profession:" + profession, displayProfession(profession),
                 entry -> entry.offer().profession().equals(profession)
             )));
         cachedRowSource = payload.entries();
         cachedLanguage = language;
         cachedFilters = List.copyOf(choices);
+        // Catalogue updates may insert or remove professions before this index.
+        // Keep the actual choice, not its former position or translated label.
+        if (selectedKey != null) {
+            int retainedIndex = -1;
+            for (int index = 0; index < cachedFilters.size(); index++) {
+                if (cachedFilters.get(index).key.equals(selectedKey)) {
+                    retainedIndex = index;
+                    break;
+                }
+            }
+            filterIndex = Math.max(0, retainedIndex);
+            if (retainedIndex < 0) page = 0;
+        }
         cachedQuery = null;
         return cachedFilters;
+    }
+
+    private static FilterChoice builtinFilter(String name, Predicate<CataloguePayload.Entry> predicate) {
+        String key = "merchant_villager.filter." + name;
+        return new FilterChoice(key, translated(key), predicate);
     }
 
     private void updateControlLabels(CataloguePayload payload) {
         if (filterButton != null && payload != null) {
             List<FilterChoice> filters = filterChoices(payload);
             filterIndex = Math.floorMod(filterIndex, filters.size());
-            filterButton.setMessage(Text.literal(filters.get(filterIndex).label));
+            FilterChoice selected = filters.get(filterIndex);
+            filterButton.setMessage(Text.literal(fitText(selected.label, filterButton.getWidth() - 8)));
+            filterButton.setTooltip(Tooltip.of(Text.literal(selected.label).append("\n")
+                .append(Text.translatable("merchant_villager.tooltip.filter"))));
         }
         if (sortButton != null) {
             sortButton.setMessage(Text.translatable(sortMode.key));
@@ -999,10 +1025,6 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         return x >= left && x < left + width && y >= top && y < top + height;
     }
 
-    private static String shortText(String text, int max) {
-        return text.length() <= max ? text : text.substring(0, Math.max(0, max - 1)) + "\u2026";
-    }
-
     private static String translated(String key) {
         return Text.translatable(key).getString();
     }
@@ -1041,7 +1063,7 @@ public final class MerchantPostScreen extends HandledScreen<MerchantPostScreenHa
         return String.format(Locale.ROOT, "%.1f", value);
     }
 
-    private record FilterChoice(String label, Predicate<CataloguePayload.Entry> predicate) {
+    private record FilterChoice(String key, String label, Predicate<CataloguePayload.Entry> predicate) {
     }
 
     private enum SortMode {

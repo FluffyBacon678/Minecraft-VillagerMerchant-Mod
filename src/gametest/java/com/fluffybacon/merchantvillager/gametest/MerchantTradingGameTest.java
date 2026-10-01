@@ -42,6 +42,235 @@ import net.minecraft.village.TradeOffer;
 import net.minecraft.village.TradedItem;
 
 public final class MerchantTradingGameTest {
+    @GameTest(maxTicks = 900, skyAccess = true)
+    public void waterloggedStorageDeliversWithoutTouchingControlChest(TestContext context) {
+        runFloodStorageScenario(context, false);
+    }
+
+    @GameTest(maxTicks = 1700, skyAccess = true)
+    public void submergedMerchantConservesInputsAndRewards(TestContext context) {
+        runFloodStorageScenario(context, true);
+    }
+
+    private static void runFloodStorageScenario(TestContext context, boolean submerged) {
+        createFloor(context);
+        if (submerged) {
+            // Contain the pool: a tiny open GameTest platform otherwise lets
+            // water sweep entities into the surrounding unsupported terrain.
+            for (int x = -1; x <= 8; x++) {
+                for (int z = -1; z <= 6; z++) {
+                    if (x == -1 || x == 8 || z == -1 || z == 6) {
+                        for (int y = 0; y <= 3; y++) {
+                            context.setBlockState(new BlockPos(x, y, z), Blocks.STONE);
+                        }
+                    }
+                }
+            }
+            for (int x = 0; x <= 7; x++) {
+                for (int z = 0; z <= 5; z++) {
+                    for (int y = 1; y <= 2; y++) {
+                        context.setBlockState(new BlockPos(x, y, z), Blocks.WATER);
+                    }
+                }
+            }
+        }
+        BlockPos postPos = new BlockPos(3, 1, 2);
+        context.setBlockState(postPos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(postPos.west(), Blocks.CHEST.getDefaultState().with(ChestBlock.WATERLOGGED, true));
+        context.setBlockState(postPos.east(), Blocks.CHEST.getDefaultState().with(ChestBlock.WATERLOGGED, true));
+        if (!submerged) {
+            // Test wet storage separately from an uncontrolled flowing-water route.
+            for (BlockPos chestPos : java.util.List.of(postPos.west(), postPos.east())) {
+                for (Direction direction : Direction.Type.HORIZONTAL) {
+                    BlockPos neighbor = chestPos.offset(direction);
+                    if (!neighbor.equals(postPos)) {
+                        context.setBlockState(neighbor, Blocks.GLASS);
+                    }
+                }
+            }
+        }
+        BlockPos controlPos = new BlockPos(0, 1, 4);
+        context.setBlockState(controlPos, Blocks.CHEST);
+        Inventory control = context.getBlockEntity(controlPos, ChestBlockEntity.class);
+        control.setStack(0, new ItemStack(Items.PAPER, 64));
+        control.setStack(1, new ItemStack(Items.EMERALD, 7));
+        VillagerEntity worker = spawnVillager(context, new BlockPos(3, 1, 3));
+        VillagerEntity target = spawnVillager(context, submerged ? new BlockPos(5, 1, 3) : new BlockPos(3, 1, 4));
+        // Isolate water/path handling from vanilla drowning/death drops.
+        worker.setInvulnerable(true);
+        target.setInvulnerable(true);
+        target.setAiDisabled(true);
+        target.getOffers().clear();
+        TradeOffer offer = new TradeOffer(new TradedItem(Items.PAPER, 24), Optional.empty(),
+            new ItemStack(Items.EMERALD), 2, 1, 0.0F);
+        target.getOffers().add(offer);
+        prepareWorker(context, worker, postPos);
+        MerchantPostBlockEntity post = context.getBlockEntity(postPos, MerchantPostBlockEntity.class);
+        post.assignMerchant(worker.getUuid());
+        post.refreshCatalogue(true);
+        post.getOffers().stream().filter(snapshot -> snapshot.targetUuid().equals(target.getUuid()))
+            .forEach(snapshot -> post.setOfferEnabledInternal(snapshot.fingerprint(), true));
+        boolean[] sawWater = {false};
+        context.runAtEveryTick(() -> sawWater[0] |= worker.isTouchingWater());
+        context.runAtTick(5, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            context.assertTrue(source != null, "Waterlogged Import must be detected");
+            context.assertTrue(post.getExportInventory(context.getWorld()) != null, "Waterlogged Export must be detected");
+            source.setStack(0, new ItemStack(Items.PAPER, 48));
+        });
+        context.runAtTick(800, () -> {
+            Inventory source = post.getImportInventory(context.getWorld());
+            Inventory export = post.getExportInventory(context.getWorld());
+            MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+            int cargoPaper = state.cargo().stream().filter(stack -> stack.isOf(Items.PAPER)).mapToInt(ItemStack::getCount).sum();
+            int cargoEmeralds = state.cargo().stream().filter(stack -> stack.isOf(Items.EMERALD)).mapToInt(ItemStack::getCount).sum();
+            int paper = source.count(Items.PAPER) + export.count(Items.PAPER) + post.count(Items.PAPER) + cargoPaper;
+            int emeralds = source.count(Items.EMERALD) + export.count(Items.EMERALD) + post.count(Items.EMERALD) + cargoEmeralds;
+            MerchantVillagerMod.LOGGER.info(
+                "GAME_TEST_EVIDENCE scenario={} uses={} paper={} emeralds={} export_emeralds={} cargo_items={} saw_water={} state={} failure={}",
+                submerged ? "submerged_conservation" : "waterlogged_storage", offer.getUses(), paper, emeralds,
+                export.count(Items.EMERALD), cargoPaper + cargoEmeralds, sawWater[0], state.state(), state.lastFailure()
+            );
+            context.assertEquals(48, paper + offer.getUses() * 24, "Flooding must not lose or duplicate payment");
+            context.assertEquals(offer.getUses(), emeralds, "Every completed trade must yield exactly one retained emerald");
+            context.assertEquals(64, control.count(Items.PAPER), "Flooding must not broaden chest selection");
+            context.assertEquals(7, control.count(Items.EMERALD), "Control chest emeralds must remain untouched");
+            if (submerged) {
+                context.assertTrue(sawWater[0], "Submerged fixture must actually put the Merchant in water");
+                // Restore a dry route and require recovery, not just conservation while stalled.
+                drainFloodFixture(context);
+            } else {
+                context.assertEquals(2, offer.getUses(), "Waterlogged storage must complete both trades");
+                context.assertEquals(2, export.count(Items.EMERALD), "Both rewards must reach waterlogged Export");
+                context.assertFalse(state.hasCargo(), "Waterlogged delivery must settle cargo");
+            }
+            if (!submerged) {
+                context.complete();
+            }
+        });
+        if (submerged) {
+            // Scheduled fluid updates can refill cells during the first drain.
+            for (int tick = 820; tick <= 900; tick += 20) {
+                context.runAtTick(tick, () -> drainFloodFixture(context));
+            }
+            context.runAtTick(1600, () -> {
+                Inventory source = post.getImportInventory(context.getWorld());
+                Inventory export = post.getExportInventory(context.getWorld());
+                MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+                MerchantVillagerMod.LOGGER.info(
+                    "GAME_TEST_EVIDENCE scenario=flood_drained_recovery uses={} import_paper={} post_paper={} export_emeralds={} cargo_items={} state={} failure={} worker_pos={} target_pos={} touching_water={}",
+                    offer.getUses(), source.count(Items.PAPER), post.count(Items.PAPER), export.count(Items.EMERALD),
+                    state.cargo().stream().mapToInt(ItemStack::getCount).sum(), state.state(), state.lastFailure(),
+                    worker.getEntityPos(), target.getEntityPos(), worker.isTouchingWater()
+                );
+                context.assertFalse(worker.isTouchingWater(), "Drain fixture must actually restore a dry route");
+                context.assertEquals(2, offer.getUses(), "Restoring a dry route must allow both trades to finish");
+                context.assertEquals(2, export.count(Items.EMERALD), "Recovered rewards must reach Export exactly once");
+                context.assertEquals(0, source.count(Items.PAPER) + post.count(Items.PAPER), "Recovered inputs must be consumed exactly once");
+                context.assertFalse(state.hasCargo(), "Drained-world recovery must settle all cargo");
+                context.assertEquals(64, control.count(Items.PAPER), "Recovery must not touch nearby player storage");
+                context.assertEquals(7, control.count(Items.EMERALD), "Recovery must leave control emeralds untouched");
+                context.complete();
+            });
+        }
+    }
+
+    private static void drainFloodFixture(TestContext context) {
+        for (int x = -2; x <= 9; x++) {
+            for (int z = -2; z <= 7; z++) {
+                for (int y = 1; y <= 3; y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    var state = context.getBlockState(pos);
+                    if (state.contains(net.minecraft.state.property.Properties.WATERLOGGED)
+                        && state.get(net.minecraft.state.property.Properties.WATERLOGGED)) {
+                        context.setBlockState(pos, state.with(net.minecraft.state.property.Properties.WATERLOGGED, false));
+                    }
+                }
+            }
+        }
+        for (int x = -2; x <= 9; x++) {
+            for (int z = -2; z <= 7; z++) {
+                for (int y = 1; y <= 3; y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (context.getBlockState(pos).isOf(Blocks.WATER)) {
+                        context.setBlockState(pos, Blocks.AIR);
+                    }
+                }
+            }
+        }
+    }
+
+    @GameTest
+    public void crowdedCatalogueSharesApprovalAndRemovesDepartedProviders(TestContext context) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        context.setBlockState(pos, ModBlocks.MERCHANT_POST);
+        MerchantPostBlockEntity post = context.getBlockEntity(pos, MerchantPostBlockEntity.class);
+        java.util.List<VillagerEntity> targets = new java.util.ArrayList<>();
+        java.util.Set<java.util.UUID> ids = new java.util.HashSet<>();
+        for (int index = 0; index < 48; index++) {
+            VillagerEntity target = spawnVillager(context, new BlockPos(3, 1, 3));
+            target.setAiDisabled(true);
+            target.getOffers().clear();
+            for (int duplicate = 0; duplicate < 4; duplicate++) {
+                target.getOffers().add(new TradeOffer(new TradedItem(Items.PAPER, 24), Optional.empty(),
+                    new ItemStack(Items.EMERALD), 12, 1, 0.0F));
+            }
+            targets.add(target);
+            ids.add(target.getUuid());
+        }
+        post.refreshCatalogue(true);
+        var offers = post.getOffers().stream().filter(snapshot -> ids.contains(snapshot.targetUuid())).toList();
+        context.assertEquals(192, offers.size(), "Crowded scan must retain every live provider and offer");
+        context.assertEquals(1L, offers.stream().map(post::tradeKeyFor).distinct().count(), "Identical offers must share one recipe key");
+        post.setOfferEnabledInternal(offers.getFirst().fingerprint(), true);
+        context.assertTrue(offers.stream().allMatch(post::isOfferEnabled), "One approval must enable all 192 duplicates");
+        targets.subList(0, 24).forEach(VillagerEntity::discard);
+        post.refreshCatalogue(true);
+        var remaining = post.getOffers().stream().filter(snapshot -> ids.contains(snapshot.targetUuid())).toList();
+        context.assertEquals(96, remaining.size(), "Departed providers must leave no stale live rows");
+        context.assertTrue(remaining.stream().allMatch(post::isOfferEnabled), "Provider churn must preserve shared approval");
+        post.setOfferEnabledInternal(remaining.getFirst().fingerprint(), false);
+        context.assertTrue(remaining.stream().noneMatch(post::isOfferEnabled), "Disabling once must disable all survivors");
+        MerchantVillagerMod.LOGGER.info("GAME_TEST_EVIDENCE scenario=crowded_catalogue providers=48 offers=192 remaining_offers={} distinct_keys=1 shared_toggle=true", remaining.size());
+        context.complete();
+    }
+
+    @GameTest
+    public void customComponentTradeKeepsExactRewardsAndDoesNotReplay(TestContext context) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        context.setBlockState(pos, ModBlocks.MERCHANT_POST);
+        VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 2));
+        VillagerEntity target = spawnVillager(context, new BlockPos(3, 1, 2));
+        target.getOffers().clear();
+        net.minecraft.text.Text name = net.minecraft.text.Text.literal("Compatibility input");
+        TradedItem first = new TradedItem(Items.PAPER, 2).withComponents(
+            builder -> builder.add(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, name));
+        ItemStack reward = new ItemStack(Items.DIAMOND, 2);
+        reward.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("Custom reward"));
+        reward.set(net.minecraft.component.DataComponentTypes.MAX_STACK_SIZE, 1);
+        TradeOffer offer = new TradeOffer(first, Optional.of(new TradedItem(Items.EMERALD)), reward, 5, 1, 0.0F);
+        target.getOffers().add(offer);
+        MerchantPostBlockEntity post = context.getBlockEntity(pos, MerchantPostBlockEntity.class);
+        post.refreshCatalogue(true);
+        var snapshot = post.getOffers().stream().filter(row -> row.targetUuid().equals(target.getUuid())).findFirst().orElseThrow();
+        post.setOfferEnabledInternal(snapshot.fingerprint(), true);
+        MerchantWorkerState state = ((MerchantWorker)worker).merchantVillager$getState();
+        ItemStack input = new ItemStack(Items.PAPER, 2);
+        input.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, name);
+        state.add(input, false);
+        state.add(new ItemStack(Items.EMERALD), false);
+        state.target(target.getUuid(), snapshot.offerIndex(), snapshot.fingerprint());
+        state.plannedExecutions(1);
+        context.assertTrue(MerchantTradeExecutor.executeOne(context.getWorld(), worker, target, state, post), "Custom trade must execute");
+        context.assertFalse(MerchantTradeExecutor.executeOne(context.getWorld(), worker, target, state, post), "Spent inputs must not replay a custom trade");
+        context.assertEquals(1, offer.getUses(), "Custom trade must increment uses once");
+        context.assertEquals(2L, state.cargo().stream().filter(stack -> !stack.isEmpty()).count(), "Two unstackable rewards require two slots");
+        context.assertTrue(state.cargo().stream().filter(stack -> !stack.isEmpty()).allMatch(
+            stack -> stack.getCount() == 1 && ItemStack.areItemsAndComponentsEqual(stack, reward)), "All reward components must survive");
+        MerchantVillagerMod.LOGGER.info("GAME_TEST_EVIDENCE scenario=custom_component_trade uses=1 reward_slots=2 reward_count=2 components_preserved=true replay=false");
+        context.complete();
+    }
+
     @GameTest
     public void socialTargetLockSelfReleasesWhenWorkerDisappears(TestContext context) {
         VillagerEntity worker = spawnVillager(context, new BlockPos(1, 1, 1));

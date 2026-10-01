@@ -1,7 +1,19 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "merchant_villager:block/merchant_post"
+    },
+    "facing=east": {
+      "model": "merchant_villager:block/merchant_post",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "merchant_villager:block/merchant_post",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "merchant_villager:block/merchant_post",
+      "y": 270
     }
   }
 }

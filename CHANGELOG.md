@@ -6,6 +6,14 @@ Notable user-facing changes to Merchant Villager are recorded here.
 
 ### Improved
 
+- Merchant's Post has a distinct emblem front, vanilla barrel-style sides,
+  top and base. It faces its placer and supports vanilla rotation/mirroring,
+  without changing its full-block collision or touching-chest safety boundary.
+- Profession filters retain their selected profession when catalogue updates add
+  or remove other professions; removing the selected profession safely returns
+  to All rather than silently selecting an unrelated filter.
+- Compact filter labels fit the button width, with the full active filter in
+  its tooltip. Search and page arrows have explanatory tooltips.
 - Catalogue search and keyboard focus survive window resizing and GUI scale changes.
 - Empty-hand clicks on trade input icons toggle approval, matching the rest of
   the row. Cursor-stack and shift-click material deposits retain their behavior.
@@ -17,6 +25,14 @@ Notable user-facing changes to Merchant Villager are recorded here.
 
 ### Reliability
 
+- Two-input trades no longer count overlapping materials twice when showing
+  affordability or selecting work. Planning, reservation, and cargo execution
+  spend exclusive matches first, preserving component-specific second inputs.
+- Regression coverage checks shared-input batch counts, named-item allocation,
+  and atomic failure without consuming materials or creating rewards.
+- Automated edge coverage includes waterlogged chest delivery, submerged
+  conservation and dry-route recovery, crowded duplicate-provider churn, and
+  custom trade reward components/stack limits with replay rejection.
 - Refresh and Disable All use independent server cooldowns, applied only after
   the player is verified to have the matching usable Merchant's Post open.
 

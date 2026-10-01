@@ -24,6 +24,16 @@ jobs:
       - name: Verify mod and gameplay loop
         run: ./gradlew build --no-daemon --stacktrace
 
+      - name: Upload verified production mod
+        uses: actions/upload-artifact@v7
+        with:
+          name: merchant-villager-build-${{ github.sha }}
+          path: |
+            build/libs/merchant-villager-*.jar
+            !build/libs/*-sources.jar
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Surface GameTest failure details
         if: failure()
         shell: bash

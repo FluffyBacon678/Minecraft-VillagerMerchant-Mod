@@ -1,8 +1,48 @@
 # Merchant Villager 1.1.0 release smoke test
 
 Current follow-up: see [Release readiness](RELEASE_READINESS.md) for the
-`1.1.1-dev.2` polish build, verified artifact, and outstanding acceptance cases.
+`1.1.1-dev.8` polish build, verified artifact, and outstanding acceptance cases.
 The results below remain the historical 1.1.0/RC evidence.
+
+## Latest automated follow-up — 2026-10-01
+
+Candidate: `1.1.1-dev.8`. No manual Prism case was newly marked passed.
+
+| ID | Scenario | Result | Evidence |
+|---|---|---|---|
+| F01 | Java tests and production artifact | PASS | 62 tests, zero failures/errors/skips; JAR verifier passed |
+| F02 | Full Merchant server suite | PASS | All 72 required GameTests passed |
+| F03 | Resources to emeralds | PASS | Exactly 3 Export emeralds; zero remaining inputs or cargo |
+| F04 | Emeralds to goods | PASS | 9 emeralds spent; 1 clock, 1 compass, 1 name tag exported; empty cargo |
+| F05 | Profession filter identity | PASS after fix | Regression failed before fix when inserting Armorer shifted Librarian to Farmer. Selection now survives insertion/removal of other professions; removing the selected profession returns to All |
+| F06 | GUI scale, focus, and empty search | PASS | Real client captures at scales 2/3; search/focus retained after resizing and scale change; empty-search message reviewed |
+| F07 | Shared input affordability and batch reservation | PASS | 11 paper supports two 3+2 paper trades, reserves exactly 10, and leaves 1 in storage; 4 paper supports none |
+| F08 | Component-specific dual inputs | PASS after fix | Old cargo consumption order reproduced failure with named paper preceding plain paper. Corrected planning, reservation, and execution preserve the narrow requirement and yield exactly 1 emerald for 5 paper |
+| F09 | Atomic shared-input underpayment | PASS | Insufficient payment leaves all 4 paper untouched and creates zero emeralds |
+| F10 | Contained waterlogged storage | PASS | 48 paper consumed; 2 emeralds delivered; cargo empty; nearby control chest retains 64 paper and 7 emeralds |
+| F11 | Submersion and restored dry route | PASS | At tick 800: Merchant touched water, all 48 paper retained, no rewards minted. After drainage: both trades complete, Export has exactly 2 emeralds, cargo empty, control storage unchanged |
+| F12 | Crowded live trade catalogue | PASS | 48 villagers expose 192 duplicate offers with 1 shared recipe key; one toggle affects all. Removing 24 providers leaves exactly 96 offers and preserves approval; disabling once disables all survivors |
+| F13 | Custom trade components and stack limits | PASS | Named paper plus emerald payment yields exactly two named, unstackable diamonds in separate cargo slots; reward components preserved; retry cannot replay spent inputs |
+| F14 | Named third-party modpack compatibility | NOT RUN | Test harness uses Fabric API plus Merchant only. Custom-offer fixture is a compatibility-contract check, not a third-party mod integration test |
+| F15 | Post placement, rotation, mirroring | PASS | All four player headings place the emblem toward the player; North default, clockwise rotation, and left/right mirror verified |
+| F16 | Post rotation preserves storage roles | PASS | All four front orientations retain the same block entity, seven paper, and unchanged Import/Export assignments |
+| F17 | Comparator storage fullness | PASS | Empty=0, one full slot=1, all 27 full slots=15 |
+| F18 | Post model rendering | PASS | Production item rendered beside vanilla barrel; reviewed screenshot at `art/screenshots/merchant-post-block-polish.png`; no missing model/texture warnings |
+
+Logs: `build/run/gameTest/logs/latest.log` and
+`build/run/clientGameTest/logs/latest.log`. Captures are preserved in `art/screenshots/`.
+Pre-fix failure log: `build/reports/merchant-regressions/overlapping-inputs-before-fix.log`.
+Flood/crowd/custom-offer run: `build/reports/merchant-regressions/flood-crowd-custom-offers-final.log`.
+
+Flood scope: test entities are invulnerable to isolate route recovery from vanilla
+drowning. Initial recovery fixtures failed because water remained or could sweep
+entities off an open test platform. The final contained fixture clears waterlogged
+sources and residual fluid updates, asserts the Merchant is dry, then requires
+exact delivery. Continuous flowing-water operation is not guaranteed by these tests.
+The 48-provider test checks catalogue correctness, not whole-world TPS or many-Post
+performance. Manual drowning/death recovery and a specified modpack remain separate checks.
+
+## Historical release smoke evidence
 
 Final verification date: 2026-08-31
 Target instance: `MerchantVillager-RC-Smoke` / display name `Merchant Villager RC Smoke`

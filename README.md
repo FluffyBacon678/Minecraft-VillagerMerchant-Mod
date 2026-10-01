@@ -27,6 +27,8 @@ version on the dedicated server and on each client.
 
 ## Screenshots
 
+![Directional Merchant's Post beside the vanilla barrel, rendered with Minecraft's item renderer](art/screenshots/merchant-post-block-polish.png)
+
 ![Merchant's Post screen with four live trades, stored materials, and an assigned Merchant](art/screenshots/merchant-post-gui.png)
 
 ![Original burgundy-and-walnut Merchant Villager outfit beside a touching chest](art/screenshots/merchant-villager-outfit.png)
@@ -37,6 +39,10 @@ Craft a Merchant's Post from a barrel, bell, and emerald, place it near an
 unemployed adult villager, and place one or two chests directly against the
 post. Open the post (or interact with its assigned Merchant) to approve offers
 and insert matching trade materials into its 27-slot Trade Storage.
+
+The emblem front faces you when placed; vanilla rotation and mirroring turn
+the front without changing stored items or chest roles. The post remains a
+full cube with ordinary wooden-block collision and comparator fullness output.
 
 Use any of Minecraft's 16 dyes directly on an adult Merchant to recolor only
 its cap and tailored cloth, just like dyeing a sheep. Leather, apron, shirt,

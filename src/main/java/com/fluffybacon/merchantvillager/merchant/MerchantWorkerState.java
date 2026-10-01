@@ -444,7 +444,7 @@ public final class MerchantWorkerState {
     ) {
         DefaultedList<ItemStack> working = copyCargo();
         BitSet flags = rewardFlagsCopy();
-        if (!consume(working, flags, first, firstCount)
+        if (!consume(working, flags, first, firstCount, second)
             || (second.isPresent() && !consume(working, flags, second.get(), secondCount))
             || !insert(working, flags, output.copy(), true)) {
             return false;
@@ -456,16 +456,26 @@ public final class MerchantWorkerState {
     private static boolean consume(
         DefaultedList<ItemStack> inventory, BitSet flags, TradedItem required, int amount
     ) {
+        return consume(inventory, flags, required, amount, Optional.empty());
+    }
+
+    private static boolean consume(
+        DefaultedList<ItemStack> inventory, BitSet flags, TradedItem required, int amount,
+        Optional<TradedItem> otherInput
+    ) {
         int remaining = amount;
-        for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
-            ItemStack stack = inventory.get(slot);
-            if (!flags.get(slot) && required.matches(stack)) {
-                int moved = Math.min(remaining, stack.getCount());
-                stack.decrement(moved);
-                remaining -= moved;
-                if (stack.isEmpty()) {
-                    inventory.set(slot, ItemStack.EMPTY);
-                    flags.clear(slot);
+        for (int pass = 0; pass < (otherInput.isPresent() ? 2 : 1); pass++) {
+            for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
+                ItemStack stack = inventory.get(slot);
+                if (!flags.get(slot) && required.matches(stack)
+                    && (otherInput.isEmpty() || otherInput.get().matches(stack) == (pass == 1))) {
+                    int moved = Math.min(remaining, stack.getCount());
+                    stack.decrement(moved);
+                    remaining -= moved;
+                    if (stack.isEmpty()) {
+                        inventory.set(slot, ItemStack.EMPTY);
+                        flags.clear(slot);
+                    }
                 }
             }
         }

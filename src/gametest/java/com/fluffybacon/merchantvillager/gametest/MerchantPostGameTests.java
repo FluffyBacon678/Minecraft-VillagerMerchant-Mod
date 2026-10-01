@@ -6,7 +6,6 @@ import com.fluffybacon.merchantvillager.screen.MerchantCargoInventory;
 import com.fluffybacon.merchantvillager.inventory.ChestRoleMarker;
 import com.fluffybacon.merchantvillager.inventory.OrphanedMarkerCleanupState;
 import com.fluffybacon.merchantvillager.inventory.PendingMarkerRemovals;
-import com.fluffybacon.merchantvillager.merchant.MerchantWorker;
 import com.fluffybacon.merchantvillager.registry.ModBlocks;
 import java.util.Optional;
 import java.util.Set;
@@ -36,6 +35,68 @@ import net.minecraft.village.TradeOffer;
 import net.minecraft.village.TradedItem;
 
 public final class MerchantPostGameTests {
+    @GameTest
+    public void postPlacementRotationAndMirrorFollowVanillaFacing(TestContext context) {
+        var player = context.createMockPlayer(net.minecraft.world.GameMode.CREATIVE);
+        for (Direction direction : Direction.Type.HORIZONTAL) {
+            player.setYaw(direction.getPositiveHorizontalDegrees());
+            var placement = new net.minecraft.item.ItemPlacementContext(player, net.minecraft.util.Hand.MAIN_HAND,
+                new ItemStack(ModBlocks.MERCHANT_POST_ITEM), new net.minecraft.util.hit.BlockHitResult(
+                    Vec3d.ofCenter(context.getAbsolutePos(new BlockPos(1, 1, 1))), Direction.UP,
+                    context.getAbsolutePos(new BlockPos(1, 1, 1)), false));
+            var state = ModBlocks.MERCHANT_POST.getPlacementState(placement);
+            context.assertEquals(player.getHorizontalFacing().getOpposite(),
+                state.get(com.fluffybacon.merchantvillager.block.MerchantPostBlock.FACING), "Post front must face its placer");
+        }
+        var north = ModBlocks.MERCHANT_POST.getDefaultState();
+        var facing = com.fluffybacon.merchantvillager.block.MerchantPostBlock.FACING;
+        context.assertEquals(Direction.NORTH, north.get(facing), "Legacy/default states must have a stable North front");
+        context.assertEquals(Direction.EAST, north.rotate(net.minecraft.util.BlockRotation.CLOCKWISE_90).get(facing), "Rotation must turn the front");
+        context.assertEquals(Direction.SOUTH, north.mirror(net.minecraft.util.BlockMirror.LEFT_RIGHT).get(facing), "Mirror must follow vanilla facing semantics");
+        context.complete();
+    }
+
+    @GameTest(maxTicks = 30)
+    public void rotatingPostKeepsInventoryAndTouchingChestRoles(TestContext context) {
+        BlockPos pos = new BlockPos(2, 1, 2);
+        context.setBlockState(pos, ModBlocks.MERCHANT_POST);
+        context.setBlockState(pos.west(), Blocks.CHEST);
+        context.setBlockState(pos.east(), Blocks.CHEST);
+        MerchantPostBlockEntity post = context.getBlockEntity(pos, MerchantPostBlockEntity.class);
+        post.setStack(0, new ItemStack(Items.PAPER, 7));
+        context.runAtTick(3, () -> {
+            var importPos = post.getImportChestPos();
+            var exportPos = post.getExportChestPos();
+            context.assertTrue(importPos.isPresent() && exportPos.isPresent(), "Both roles must exist before rotation");
+            for (Direction direction : Direction.Type.HORIZONTAL) {
+                context.setBlockState(pos, ModBlocks.MERCHANT_POST.getDefaultState().with(
+                    com.fluffybacon.merchantvillager.block.MerchantPostBlock.FACING, direction));
+                context.assertTrue(post == context.getBlockEntity(pos, MerchantPostBlockEntity.class), "Rotation must retain the same block entity");
+                context.assertEquals(7, post.count(Items.PAPER), "Rotation must retain all stored items");
+                context.assertEquals(importPos, post.getImportChestPos(), "Import must not depend on decorative front");
+                context.assertEquals(exportPos, post.getExportChestPos(), "Export must not depend on decorative front");
+            }
+            context.complete();
+        });
+    }
+
+    @GameTest
+    public void postComparatorTracksStorageFullness(TestContext context) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        context.setBlockState(pos, ModBlocks.MERCHANT_POST);
+        MerchantPostBlockEntity post = context.getBlockEntity(pos, MerchantPostBlockEntity.class);
+        var state = context.getBlockState(pos);
+        BlockPos absolute = context.getAbsolutePos(pos);
+        context.assertEquals(0, state.getComparatorOutput(context.getWorld(), absolute, Direction.NORTH), "Empty storage must produce zero");
+        post.setStack(0, new ItemStack(Items.PAPER, 64));
+        context.assertEquals(1, state.getComparatorOutput(context.getWorld(), absolute, Direction.NORTH), "One full slot must produce one");
+        for (int slot = 0; slot < post.size(); slot++) {
+            post.setStack(slot, new ItemStack(Items.PAPER, 64));
+        }
+        context.assertEquals(15, state.getComparatorOutput(context.getWorld(), absolute, Direction.NORTH), "Full storage must produce fifteen");
+        context.complete();
+    }
+
     @GameTest
     public void merchantCargoSlotsLetPlayersTakeInputsAndRewards(TestContext context) {
         BlockPos postPos = new BlockPos(1, 1, 1);

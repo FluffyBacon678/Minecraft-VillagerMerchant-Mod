@@ -335,15 +335,11 @@ public final class MerchantController {
         if (liveOffer == null || liveOffer.isDisabled()) {
             return 0;
         }
-        int first = com.fluffybacon.merchantvillager.trade.TradeInputMatcher.matchingCount(
-            post.copyInventory(), offer.firstInput()
-        ) / Math.max(1, liveOffer.getDisplayedFirstBuyItem().getCount());
-        if (offer.secondInput().isPresent()) {
-            int second = com.fluffybacon.merchantvillager.trade.TradeInputMatcher.matchingCount(
-                post.copyInventory(), offer.secondInput().get()
-            ) / Math.max(1, liveOffer.getDisplayedSecondBuyItem().getCount());
-            first = Math.min(first, second);
-        }
+        int first = com.fluffybacon.merchantvillager.trade.TradeInputMatcher.affordableExecutions(
+            post.copyInventory(), liveOffer.getFirstBuyItem(),
+            liveOffer.getDisplayedFirstBuyItem().getCount(), liveOffer.getSecondBuyItem(),
+            liveOffer.getDisplayedSecondBuyItem().getCount()
+        );
         return Math.min(first, liveOffer.getMaxUses() - liveOffer.getUses());
     }
 

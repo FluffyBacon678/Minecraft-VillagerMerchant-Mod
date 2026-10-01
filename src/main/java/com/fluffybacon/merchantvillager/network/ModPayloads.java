@@ -202,14 +202,9 @@ public final class ModPayloads {
                 inventory,
                 template.firstInput()
             );
-            int fundable = firstCount / Math.max(1, firstPrice);
-            if (template.secondInput().isPresent()) {
-                int secondCount = TradeInputMatcher.matchingCount(
-                    inventory,
-                    template.secondInput().get()
-                );
-                fundable = Math.min(fundable, secondCount / Math.max(1, secondPrice));
-            }
+            int fundable = TradeInputMatcher.affordableExecutions(
+                inventory, template.firstInput(), firstPrice, template.secondInput(), secondPrice
+            );
             int remainingUses = representative == null
                 ? template.maxUses()
                 : representative.remainingUses();
@@ -434,13 +429,7 @@ public final class ModPayloads {
             if (live == null || live.isDisabled()) {
                 continue;
             }
-            int first = TradeInputMatcher.matchingCount(inventory, live.getFirstBuyItem())
-                / Math.max(1, live.getDisplayedFirstBuyItem().getCount());
-            if (live.getSecondBuyItem().isPresent()) {
-                int second = TradeInputMatcher.matchingCount(inventory, live.getSecondBuyItem().get())
-                    / Math.max(1, live.getDisplayedSecondBuyItem().getCount());
-                first = Math.min(first, second);
-            }
+            int first = affordableLiveExecutions(inventory, live);
             if (first > 0) {
                 executable.add(post.tradeKeyFor(snapshot));
             }
@@ -455,14 +444,17 @@ public final class ModPayloads {
         if (live == null || live.isDisabled()) {
             return 0;
         }
-        int result = TradeInputMatcher.matchingCount(inventory, live.getFirstBuyItem())
-            / Math.max(1, live.getDisplayedFirstBuyItem().getCount());
-        if (live.getSecondBuyItem().isPresent()) {
-            int second = TradeInputMatcher.matchingCount(inventory, live.getSecondBuyItem().get())
-                / Math.max(1, live.getDisplayedSecondBuyItem().getCount());
-            result = Math.min(result, second);
-        }
-        return Math.min(result, Math.max(0, live.getMaxUses() - live.getUses()));
+        return affordableLiveExecutions(inventory, live);
+    }
+
+    private static int affordableLiveExecutions(List<ItemStack> inventory, TradeOffer live) {
+        return Math.min(
+            TradeInputMatcher.affordableExecutions(
+                inventory, live.getFirstBuyItem(), live.getDisplayedFirstBuyItem().getCount(),
+                live.getSecondBuyItem(), live.getDisplayedSecondBuyItem().getCount()
+            ),
+            Math.max(0, live.getMaxUses() - live.getUses())
+        );
     }
 
     private static PreparedCatalogue prepareCatalogue(
